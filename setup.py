@@ -17,7 +17,7 @@ setup(name='gpmp-contrib',
           "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
           "Operating System :: OS Independent",
       ],
-      packages=['gpmpcontrib','gpmpcontrib/optim', 'test'],
+      packages=['gpmpcontrib','gpmpcontrib/optim', 'gpmpcontrib/misc', 'test'],
       license='LICENSE.txt',
       install_requires=[
              "numpy",

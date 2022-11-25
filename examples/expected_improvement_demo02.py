@@ -10,24 +10,18 @@ import matplotlib.pyplot as plt
 import gpmp as gp
 import gpmpcontrib.optim.expectedimprovement as ei
 import gpmpcontrib.sampcrit as sampcrit
+import gpmpcontrib.misc.problem as pb
 
 ## -- definition of a mono-objective problem
 
-class Problem:
-
-    def __init__(self):
-
-        self.dim = 1
-        self.p = 1
-        self.box = [[-1], [1]]
-
-    def eval(self, x):
-        return gp.misc.testfunctions.twobumps(x)
-
+problem = pb.Problem(
+    1,                              # dim search space
+    [[-1], [1]],                    # box
+    1,                              # dim output
+    gp.misc.testfunctions.twobumps  # function
+)
 
 ## -- create initial dataset
-
-problem = Problem()
 
 nt = 2000
 xt = gp.misc.designs.regulargrid(problem.dim, nt, problem.box)
