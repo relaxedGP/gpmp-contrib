@@ -8,8 +8,8 @@ License: GPLv3 (see LICENSE)
 import numpy as np
 import matplotlib.pyplot as plt
 import gpmp as gp
-import gpmpcontrib.sequentialprediction as gpsp
-import gpmpcontrib.sampcrit as gpsc
+import gpmpcontrib.sequentialprediction as spred
+import gpmpcontrib.sampcrit as sampcrit
 import gpmpcontrib.smc as gpsmc
 
 ## -- create initial dataset
@@ -26,7 +26,7 @@ zi = zt[ind]
 
 ## -- compute predictive distributions
 
-sp = gpsp.SequentialPrediction()
+sp = spred.SequentialPrediction()
 sp.set_data_with_model_selection(xi, zi)
 zpm, zpv = sp.predict(xt)
 
@@ -36,11 +36,11 @@ zpm, zpv = sp.predict(xt)
 
 def log_prob_excursion(x):
     log_prob_excur = np.full((x.shape[0], ), -np.inf)
-    b = gpsc.isinbox(box, x)
+    b = sampcrit.isinbox(box, x)
     zpm, zpv = sp.predict(x[b])
     log_prob_excur[b] = np.log(
         np.maximum(1e-6,
-                   gpsc.probability_excursion(-np.min(sp.zi),
+                   sampcrit.probability_excursion(-np.min(sp.zi),
                                                   -zpm,
                                                   zpv))).flatten()
     return log_prob_excur
@@ -53,8 +53,8 @@ smc.step(log_prob_excursion)
 
 
 def plot(show=True, x=None, z=None):
-    ei = gpsc.expected_improvement(-np.min(sp.zi), -zpm, zpv)
-    pe = gpsc.probability_excursion(-np.min(sp.zi), -zpm, zpv)
+    ei = sampcrit.expected_improvement(-np.min(sp.zi), -zpm, zpv)
+    pe = sampcrit.probability_excursion(-np.min(sp.zi), -zpm, zpv)
 
     fig = gp.misc.plotutils.Figure(nrows=3, ncols=1, isinteractive=True)
     fig.subplot(1)
@@ -86,7 +86,7 @@ def ei_step():
 
     # make a new evaluation
     zpm, zpv = sp.predict(smc.x)
-    ei = gpsc.expected_improvement(-np.min(zi), -zpm, zpv)
+    ei = sampcrit.expected_improvement(-np.min(zi), -zpm, zpv)
     x_new = smc.x[np.argmax(ei)]
     z_new = gp.misc.testfunctions.twobumps(x_new)
     sp.set_new_eval_with_model_selection(x_new, z_new)

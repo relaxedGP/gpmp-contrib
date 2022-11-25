@@ -5,9 +5,9 @@ Copyright (c) 2022, CentraleSupelec
 License: GPLv3 (see LICENSE)
 
 """
-
 import numpy as np
 import gpmp as gp
+
 
 class SequentialPrediction:
     """Sequential predictions made easier:
@@ -27,37 +27,36 @@ class SequentialPrediction:
         # dataset
         # xi : ndarray(ni, d)
         # zi : ndarray(ni, dim_output)
-        self.xi = None
+        self.xi = None 
         self.zi = None
 
         # initialize models
         self.dim_output = dim_output
+        self.build_models(models)
 
+        # conditional_simulations
+        self.n_samplepaths = None
+        self.zsim = None
+        self.xtsim = None
+
+    def build_models(self, models):
         if models is None:
             self.models = [{'name': '',
-                            'mean': None,
-                            'covariance': None,
                             'model': None,
                             'parameters_initial_guess': None,
-                            'make_selection_criterion': None}] * dim_output
+                            'make_selection_criterion': None}] * self.dim_output
 
-            for i in range(dim_output):
-                self.models[i]['mean'] = self.constant_mean
-                self.models[i]['covariance'] = self.default_covariance
-                self.models[i]['model'] = gp.core.Model(self.models[i]['mean'],
-                                                   self.models[i]['covariance'],
-                                                   None,
-                                                   None)
+            for i in range(self.dim_output):
+                self.models[i]['model'] = gp.core.Model(
+                    self.constant_mean,
+                    self.default_covariance,
+                    None,
+                    None)
                 self.models[i]['parameters_initial_guess'] = gp.kernel.anisotropic_parameters_initial_guess
                 self.models[i]['make_selection_criterion'] = gp.kernel.make_reml_criterion
         else:
             self.models = models
-
-        # conditional_simulations
-        self.n_samplepaths=None
-        self.zsim=None
-        self.xtsim=None
-
+        
     def constant_mean(self, x, param):
         return np.ones((x.shape[0], 1))
 
@@ -66,8 +65,8 @@ class SequentialPrediction:
         return gp.kernel.maternp_covariance(x, y, p, covparam, pairwise)
 
     def set_data(self, xi, zi):
-        self.xi=xi
-        self.zi=zi.reshape(zi.shape[0], -1)  # self.zi is a matrix
+        self.xi = xi
+        self.zi = zi.reshape(zi.shape[0], -1)  # self.zi is a matrix
         # even if zi is a vector
 
     def set_data_with_model_selection(self, xi, zi):
@@ -75,8 +74,8 @@ class SequentialPrediction:
         self.update_params()
 
     def set_new_eval(self, xnew, znew):
-        self.xi=np.vstack((self.xi, xnew))
-        self.zi=np.vstack((self.zi.reshape(self.zi.shape[0], -1), znew))
+        self.xi = np.vstack((self.xi, xnew))
+        self.zi = np.vstack((self.zi.reshape(self.zi.shape[0], -1), znew))
 
     def set_new_eval_with_model_selection(self, xnew, znew):
         self.set_new_eval(xnew, znew)
@@ -122,9 +121,9 @@ class SequentialPrediction:
         self.n_samplepaths = n_samplepaths
         ni = self.xi.shape[0]
         nt = xt.shape[0]
-        
+
         self.xtsim = np.vstack((self.xi, xt))
-        
+
         if enforce_unique:
             self.xtsim, indices = np.unique(
                 self.xtsim,
