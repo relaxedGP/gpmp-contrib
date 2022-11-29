@@ -114,8 +114,21 @@ class SequentialPrediction:
         zpv = np.maximum(zpv, 0)
         return zpm, zpv
 
-    def conditional_simulations(self, xt, n_samplepaths, enforce_unique=True):
-        """Generate conditional sample paths"""
+    def conditional_simulations(self, xt, n_samplepaths, type='intersection'):
+        """Generate conditional sample paths
+
+        Parameters
+        ----------
+        xt : ndarray(nt, d)
+            Simulation points
+        n_samplepaths : int
+            Number of sample paths
+        type : 'intersection', 'disjoint' 
+            If type is 'intersection', xi and xt may have a non-empty
+            intersection (as when xi is a subset of xt).
+            If type is 'disjoint', xi and xt must be disjoint
+
+        """
 
         # initialize sample paths
         self.n_samplepaths = n_samplepaths
@@ -123,8 +136,7 @@ class SequentialPrediction:
         nt = xt.shape[0]
 
         self.xtsim = np.vstack((self.xi, xt))
-
-        if enforce_unique:
+        if type == 'intersection':
             self.xtsim, indices = np.unique(
                 self.xtsim,
                 return_inverse=True,
@@ -132,12 +144,12 @@ class SequentialPrediction:
             xi_ind = indices[0:ni]
             xt_ind = indices[ni:(ni+nt)]
             n = self.xtsim.shape[0]
-        else:
+        elif type == 'disjoint':
             xi_ind = np.range(ni)
             xt_ind = np.range(nt) + ni
             n = ni + nt
 
-        # unconditional sample paths
+        # unconditional sample paths on xtsim
         self.zsim = np.empty(
             (n, n_samplepaths, self.dim_output))
 
@@ -166,6 +178,7 @@ class SequentialPrediction:
                 lambda_t[:, :, i])
 
         if self.dim_output == 1:
+            # drop the last dimension
             return zpsim.reshape((zpsim.shape[0], zpsim.shape[1]))
         else:
             return zpsim
