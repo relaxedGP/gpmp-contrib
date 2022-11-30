@@ -24,7 +24,7 @@ problem = pb.Problem(
 ## -- create initial dataset
 
 nt = 2000
-xt = gp.misc.designs.regulargrid(problem.dim, nt, problem.box)
+xt = gp.misc.designs.regulargrid(problem.dim_inputs, nt, problem.box_inputs)
 zt = gp.misc.testfunctions.twobumps(xt)
 
 ind = [100, 1000, 1600]

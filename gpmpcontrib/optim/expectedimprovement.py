@@ -32,12 +32,12 @@ class ExpectedImprovement(spred.SequentialPrediction):
         return default_options
 
     def init_smc(self, n_smc):
-        return gpsmc.SMC(self.problem.box, n_smc)
+        return gpsmc.SMC(self.problem.box_inputs, n_smc)
 
     def log_prob_excursion(self, x):
         tol = 1e-6
         log_prob_excur = np.full((x.shape[0], ), -np.inf)
-        b = sampcrit.isinbox(self.problem.box, x)
+        b = sampcrit.isinbox(self.problem.box_inputs, x)
 
         zpm, zpv = self.predict(x[b])
 

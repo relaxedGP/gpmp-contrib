@@ -47,9 +47,9 @@ objectives_num = 2
 problem = Problem1()
 
 nt = [40, 40]  # Size of the regular grid
-xt = gp.misc.designs.regulargrid(problem.dim, nt, problem.box)
+xt = gp.misc.designs.regulargrid(problem.dim_inputs, nt, problem.box_inputs)
 # nt = 500
-# xt = gp.misc.designs.ldrandunif(problem.dim, nt, problem.box)
+# xt = gp.misc.designs.ldrandunif(problem.dim_inputs, nt, problem.box_inputs)
 
 zt = problem.eval(xt)
 zt_opt_b = pareto.pareto_points(zt)
@@ -67,7 +67,7 @@ figure01()
 
 ## -- initial design & predictions
 ni = 8
-xi = gp.misc.designs.maximinldlhs(problem.dim, ni, problem.box)
+xi = gp.misc.designs.maximinldlhs(problem.dim_inputs, ni, problem.box_inputs)
 zi = problem.eval(xi)
 
 sp = spred.SequentialPrediction(dim_output=objectives_num)
