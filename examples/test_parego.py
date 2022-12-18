@@ -6,13 +6,13 @@ import gpmpcontrib.sampcrit as sampcrit
 import gpmpcontrib.optim.pareto as pareto
 
 ## -- definition of a bi-objective problem
-class Problem1:
+class Problem:
 
     def __init__(self):
 
-        self.dim = 2
-        self.p = 2
-        self.box = [[0, 0], [1, 1]]
+        self.input_dim = 2
+        self.output_dim = 2
+        self.input_box = [[0, 0], [1, 1]]
 
         self.m1 = [0.3, 0.8]
         self.c1 = [
@@ -44,12 +44,12 @@ class Problem1:
 
 ## -- Plot Pareto front
 objectives_num = 2
-problem = Problem1()
+problem = Problem()
 
 nt = [40, 40]  # Size of the regular grid
-xt = gp.misc.designs.regulargrid(problem.dim_inputs, nt, problem.box_inputs)
+xt = gp.misc.designs.regulargrid(problem.input_dim, nt, problem.input_box)
 # nt = 500
-# xt = gp.misc.designs.ldrandunif(problem.dim_inputs, nt, problem.box_inputs)
+# xt = gp.misc.designs.ldrandunif(problem.input_dim, nt, problem.input_box)
 
 zt = problem.eval(xt)
 zt_opt_b = pareto.pareto_points(zt)
@@ -67,10 +67,10 @@ figure01()
 
 ## -- initial design & predictions
 ni = 8
-xi = gp.misc.designs.maximinldlhs(problem.dim_inputs, ni, problem.box_inputs)
+xi = gp.misc.designs.maximinldlhs(problem.input_dim, ni, problem.input_box)
 zi = problem.eval(xi)
 
-sp = spred.SequentialPrediction(dim_output=objectives_num)
+sp = spred.SequentialPrediction(output_dim=objectives_num)
 sp.set_data_with_model_selection(xi, zi)
 zpm, zpv = sp.predict(xt)
 
@@ -138,7 +138,7 @@ w0 = np.array([0, 1])
 zi_w0 = f_w(w0, rescale(zi, output_box))
 
 # build model for aggregated objective
-sp_w = spred.SequentialPrediction(dim_output=1)
+sp_w = spred.SequentialPrediction(output_dim=1)
 sp_w.set_data_with_model_selection(xi, zi_w0)
 
 # ei step on aggregated objective
@@ -189,7 +189,7 @@ w0 = np.array([1, 0])
 
 zi_w0 = f_w(w0, rescale(zi, output_box))
 
-sp_w = spred.SequentialPrediction(dim_output=1)
+sp_w = spred.SequentialPrediction(output_dim=1)
 sp_w.set_data_with_model_selection(xi, zi_w0)
 
 n = 3

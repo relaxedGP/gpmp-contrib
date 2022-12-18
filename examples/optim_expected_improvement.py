@@ -1,4 +1,4 @@
-'''Implement a sketch of the EI algorithm
+'''Implement a sketch of the EI algorithm%
 
 Author: Emmanuel Vazquez <emmanuel.vazquez@centralesupelec.fr>
 Copyright (c) 2022, CentraleSupelec
@@ -10,13 +10,13 @@ import matplotlib.pyplot as plt
 import gpmp as gp
 import gpmpcontrib.optim.expectedimprovement as ei
 import gpmpcontrib.sampcrit as sampcrit
-import gpmpcontrib.misc.problem as pb
+import gpmpcontrib.misc.computer_experiment as cpexp
 
 ## -- definition of a mono-objective problem
 
-problem = pb.Problem(
+problem = cpexp.ComputerExperiment(
     1,                              # dim search space
-    [[-1], [1]],                    # box
+    [[-1], [1]],                    # search box
     1,                              # dim output
     gp.misc.testfunctions.twobumps  # function
 )
@@ -24,13 +24,13 @@ problem = pb.Problem(
 ## -- create initial dataset
 
 nt = 2000
-xt = gp.misc.designs.regulargrid(problem.dim_inputs, nt, problem.box_inputs)
+xt = gp.misc.designs.regulargrid(problem.input_dim, nt, problem.input_box)
 zt = gp.misc.testfunctions.twobumps(xt)
 
 ind = [100, 1000, 1600]
 xi = xt[ind]
 
-## -- initialize ei algorithm
+## -- initialize the ei algorithm
 
 eialgo = ei.ExpectedImprovement(problem)
 

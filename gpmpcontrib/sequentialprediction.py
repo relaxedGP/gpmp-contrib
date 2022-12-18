@@ -1,4 +1,4 @@
-"""Helper functions for sequential prediction
+"""Helper object for sequential prediction
 
 Author: Emmanuel Vazquez <emmanuel.vazquez@centralesupelec.fr>
 Copyright (c) 2022, CentraleSupelec
@@ -19,22 +19,22 @@ class SequentialPrediction:
     """
 
     def __init__(self,
-                 dim_output=1,
+                 output_dim=1,
                  models=None):
         """ properties initialization
         """
 
         # dataset
         # xi : ndarray(ni, d)
-        # zi : ndarray(ni, dim_output)
+        # zi : ndarray(ni, output_dim)
         self.xi = None 
         self.zi = None
 
         # initialize models
-        self.dim_output = dim_output
+        self.output_dim = output_dim
         self.build_models(models)
 
-        # conditional_simulations
+        # unconditional simulations
         self.n_samplepaths = None
         self.zsim = None
         self.xtsim = None
@@ -44,9 +44,10 @@ class SequentialPrediction:
             self.models = [{'name': '',
                             'model': None,
                             'parameters_initial_guess': None,
-                            'make_selection_criterion': None}] * self.dim_output
+                            'make_selection_criterion': None}
+                           for i in range(self.output_dim)] 
 
-            for i in range(self.dim_output):
+            for i in range(self.output_dim):
                 self.models[i]['model'] = gp.core.Model(
                     self.constant_mean,
                     self.default_covariance,
@@ -83,7 +84,7 @@ class SequentialPrediction:
 
     def update_params(self):
         """Parameter selection"""
-        for i in range(self.dim_output):
+        for i in range(self.output_dim):
             if self.models[i]['model'].covparam is None:
                 covparam0 = self.models[i]['parameters_initial_guess'](
                     self.models[i]['model'],
@@ -104,9 +105,9 @@ class SequentialPrediction:
 
     def predict(self, xt):
         """Prediction"""
-        zpm = np.empty((xt.shape[0], self.dim_output))
-        zpv = np.empty((xt.shape[0], self.dim_output))
-        for i in range(self.dim_output):
+        zpm = np.empty((xt.shape[0], self.output_dim))
+        zpv = np.empty((xt.shape[0], self.output_dim))
+        for i in range(self.output_dim):
             zpm[:, i], zpv[:, i] = self.models[i]['model'].predict(
                 self.xi,
                 self.zi[:, i],
@@ -151,20 +152,20 @@ class SequentialPrediction:
 
         # unconditional sample paths on xtsim
         self.zsim = np.empty(
-            (n, n_samplepaths, self.dim_output))
+            (n, n_samplepaths, self.output_dim))
 
-        for i in range(self.dim_output):
+        for i in range(self.output_dim):
             self.zsim[:, :, i] = self.models[i]['model'].sample_paths(
                 self.xtsim,
                 n_samplepaths)
 
         # conditional sample paths
-        zpm = np.empty((nt, self.dim_output))
-        zpv = np.empty((nt, self.dim_output))
-        lambda_t = np.empty((ni, nt, self.dim_output))
-        zpsim = np.empty((nt, n_samplepaths, self.dim_output))
+        zpm = np.empty((nt, self.output_dim))
+        zpv = np.empty((nt, self.output_dim))
+        lambda_t = np.empty((ni, nt, self.output_dim))
+        zpsim = np.empty((nt, n_samplepaths, self.output_dim))
 
-        for i in range(self.dim_output):
+        for i in range(self.output_dim):
             zpm[:, i], zpv[:, i], lambda_t[:, :, i] = self.models[i]['model'].predict(
                 self.xi,
                 self.zi[:, i],
@@ -177,7 +178,7 @@ class SequentialPrediction:
                 xt_ind,
                 lambda_t[:, :, i])
 
-        if self.dim_output == 1:
+        if self.output_dim == 1:
             # drop the last dimension
             return zpsim.reshape((zpsim.shape[0], zpsim.shape[1]))
         else:

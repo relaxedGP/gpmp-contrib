@@ -9,11 +9,11 @@ class ExpectedImprovement(spred.SequentialPrediction):
 
     def __init__(self, problem, model=None, options=None):
 
-        # problem definition
-        self.problem = problem
+        # Computer experiments problem
+        self.computer_experiments_problem = problem
 
         # model initialization
-        super().__init__(dim_output=1, models=model)
+        super().__init__(output_dim=1, models=model)
 
         # options
         self.options = self.set_options(options)
@@ -32,12 +32,12 @@ class ExpectedImprovement(spred.SequentialPrediction):
         return default_options
 
     def init_smc(self, n_smc):
-        return gpsmc.SMC(self.problem.box_inputs, n_smc)
+        return gpsmc.SMC(self.computer_experiments_problem.input_box, n_smc)
 
     def log_prob_excursion(self, x):
         tol = 1e-6
         log_prob_excur = np.full((x.shape[0], ), -np.inf)
-        b = sampcrit.isinbox(self.problem.box_inputs, x)
+        b = sampcrit.isinbox(self.computer_experiments_problem.input_box, x)
 
         zpm, zpv = self.predict(x[b])
 
@@ -58,7 +58,7 @@ class ExpectedImprovement(spred.SequentialPrediction):
         self.smc.step(self.log_prob_excursion)
         
     def set_initial_design(self, xi, update_model=True, update_search_space=True):
-        zi = self.problem.eval(xi)
+        zi = self.computer_experiments_problem.eval(xi)
     
         if update_model:
             super().set_data_with_model_selection(xi, zi)
@@ -71,7 +71,7 @@ class ExpectedImprovement(spred.SequentialPrediction):
             self.update_search_space()
 
     def make_new_eval(self, xnew, update_model=True, update_search_space=True):
-        znew = self.problem.eval(xnew)
+        znew = self.computer_experiments_problem.eval(xnew)
 
         if update_model:
             self.set_new_eval_with_model_selection(xnew, znew)
