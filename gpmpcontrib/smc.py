@@ -1,17 +1,15 @@
-'''Helper functions for sequential designs
-
-Author: Emmanuel Vazquez <emmanuel.vazquez@centralesupelec.fr>
-Copyright (c) 2022, CentraleSupelec
-License: GPLv3 (see LICENSE)
-
-'''
+# --------------------------------------------------------------
+# Author: Emmanuel Vazquez <emmanuel.vazquez@centralesupelec.fr>
+# Copyright (c) 2023, CentraleSupelec
+# License: GPLv3 (see LICENSE)
+# --------------------------------------------------------------
 import numpy as np
 import scipy.stats as stats
 import gpmp as gp
 
 
 class SMC:
-    '''Object to do SMC: builds a set of particles targeting a
+    '''SMC object: builds a set of particles targeting a
        distribution given by a log-pdf
 
     '''
@@ -32,7 +30,7 @@ class SMC:
         w = np.full((n, ), 1 / n)
 
         return (x, logpx, w)
-        
+
     def set_logpdf(self, logpdf):
         self.logpdf = logpdf
 
@@ -46,7 +44,6 @@ class SMC:
         return np.sum(self.w)**2 / np.sum(self.w**2)
 
     def resample(self):
-
         x_resampled = np.empty(self.x.shape)
         logpx_resampled = np.empty(self.logpx.shape)
         p = self.w / np.sum(self.w)
@@ -90,7 +87,6 @@ class SMC:
                 self.logpx[i] = logpy[i]
 
     def step(self, logpdf):
-
         self.set_logpdf(logpdf)
         self.reweight()
         self.resample()

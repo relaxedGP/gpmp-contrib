@@ -1,8 +1,13 @@
+# --------------------------------------------------------------
+# Author: Emmanuel Vazquez <emmanuel.vazquez@centralesupelec.fr>
+# Copyright (c) 2022-2023, CentraleSupelec
+# License: GPLv3 (see LICENSE)
+# --------------------------------------------------------------
 import numpy as np
 import matplotlib.pyplot as plt
 import gpmp as gp
 import gpmpcontrib.sequentialprediction as spred
-import gpmpcontrib.sampcrit as sampcrit
+import gpmpcontrib.samplingcriteria as sampcrit
 import gpmpcontrib.optim.pareto as pareto
 
 ## -- definition of a bi-objective problem

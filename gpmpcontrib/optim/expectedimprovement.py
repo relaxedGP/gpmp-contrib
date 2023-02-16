@@ -1,7 +1,12 @@
+# --------------------------------------------------------------
+# Author: Emmanuel Vazquez <emmanuel.vazquez@centralesupelec.fr>
+# Copyright (c) 2023, CentraleSupelec
+# License: GPLv3 (see LICENSE)
+# --------------------------------------------------------------
 import numpy as np
 import gpmp as gp
 import gpmpcontrib.sequentialprediction as spred
-import gpmpcontrib.sampcrit as sampcrit
+import gpmpcontrib.samplingcriteria as sampcrit
 import gpmpcontrib.smc as gpsmc
 
 
@@ -9,7 +14,7 @@ class ExpectedImprovement(spred.SequentialPrediction):
 
     def __init__(self, problem, model=None, options=None):
 
-        # Computer experiments problem
+        # computer experiments problem
         self.computer_experiments_problem = problem
 
         # model initialization
@@ -21,12 +26,12 @@ class ExpectedImprovement(spred.SequentialPrediction):
         # search space
         self.smc = self.init_smc(self.options['n_smc'])
 
-        # ei
+        # ei values
         self.ei = None
 
         # minimum
         self.minimum = None
-        
+
     def set_options(self, options):
         default_options = {'n_smc': 1000}
         return default_options
@@ -35,7 +40,7 @@ class ExpectedImprovement(spred.SequentialPrediction):
         return gpsmc.SMC(self.computer_experiments_problem.input_box, n_smc)
 
     def log_prob_excursion(self, x):
-        tol = 1e-6
+        min_threshold = 1e-6
         log_prob_excur = np.full((x.shape[0], ), -np.inf)
         b = sampcrit.isinbox(self.computer_experiments_problem.input_box, x)
 
@@ -43,7 +48,7 @@ class ExpectedImprovement(spred.SequentialPrediction):
 
         log_prob_excur[b] = np.log(
             np.maximum(
-                tol,
+                min_threshold,
                 sampcrit.probability_excursion(
                     -np.min(self.zi),
                     -zpm,
@@ -56,17 +61,17 @@ class ExpectedImprovement(spred.SequentialPrediction):
 
     def update_search_space(self):
         self.smc.step(self.log_prob_excursion)
-        
+
     def set_initial_design(self, xi, update_model=True, update_search_space=True):
         zi = self.computer_experiments_problem.eval(xi)
-    
+
         if update_model:
             super().set_data_with_model_selection(xi, zi)
         else:
             super().set_data(xi, zi)
 
         self.minimum = np.min(self.zi)
-        
+
         if update_search_space:
             self.update_search_space()
 
@@ -79,7 +84,7 @@ class ExpectedImprovement(spred.SequentialPrediction):
             self.set_new_eval(xnew, znew)
 
         self.minimum = np.min(self.zi)
-            
+
         if update_search_space:
             self.update_search_space()
 

@@ -1,10 +1,11 @@
-"""Helper object for sequential prediction
+"""Sequential prediction object
 
 Author: Emmanuel Vazquez <emmanuel.vazquez@centralesupelec.fr>
-Copyright (c) 2022, CentraleSupelec
+Copyright (c) 2022-2023, CentraleSupelec
 License: GPLv3 (see LICENSE)
 
 """
+import time
 import numpy as np
 import gpmp as gp
 
@@ -18,16 +19,13 @@ class SequentialPrediction:
     - simulate conditional sample paths
     """
 
-    def __init__(self,
-                 output_dim=1,
-                 models=None):
-        """ properties initialization
-        """
+    def __init__(self, output_dim=1, models=None):
+        """properties initialization"""
 
         # dataset
         # xi : ndarray(ni, d)
         # zi : ndarray(ni, output_dim)
-        self.xi = None 
+        self.xi = None
         self.zi = None
 
         # initialize models
@@ -39,25 +37,40 @@ class SequentialPrediction:
         self.zsim = None
         self.xtsim = None
 
+    def __repr__(self):
+        info = {
+            "input_dim": self.xi.shape[1],
+            "output_dim": self.zi.shape[1],
+            "data_size": self.xi.shape[0],
+        }
+        return str(info)
+
     def build_models(self, models):
         if models is None:
-            self.models = [{'name': '',
-                            'model': None,
-                            'parameters_initial_guess': None,
-                            'make_selection_criterion': None}
-                           for i in range(self.output_dim)] 
+            self.models = [
+                {
+                    "name": "",
+                    "model": None,
+                    "parameters_initial_guess_procedure": None,
+                    "make_selection_criterion": None,
+                    "info": None,
+                }
+                for i in range(self.output_dim)
+            ]
 
             for i in range(self.output_dim):
-                self.models[i]['model'] = gp.core.Model(
-                    self.constant_mean,
-                    self.default_covariance,
-                    None,
-                    None)
-                self.models[i]['parameters_initial_guess'] = gp.kernel.anisotropic_parameters_initial_guess
-                self.models[i]['make_selection_criterion'] = gp.kernel.make_reml_criterion
+                self.models[i]["model"] = gp.core.Model(
+                    self.constant_mean, self.default_covariance, None, None
+                )
+                self.models[i][
+                    "parameters_initial_guess_procedure"
+                ] = gp.kernel.anisotropic_parameters_initial_guess
+                self.models[i][
+                    "make_selection_criterion"
+                ] = gp.kernel.make_reml_criterion
         else:
             self.models = models
-        
+
     def constant_mean(self, x, param):
         return np.ones((x.shape[0], 1))
 
@@ -84,38 +97,48 @@ class SequentialPrediction:
 
     def update_params(self):
         """Parameter selection"""
+
         for i in range(self.output_dim):
-            if self.models[i]['model'].covparam is None:
-                covparam0 = self.models[i]['parameters_initial_guess'](
-                    self.models[i]['model'],
-                    self.xi,
-                    self.zi[:, i])
+
+            tic = time.time()
+
+            if self.models[i]["model"].covparam is None:
+                covparam0 = self.models[i]["parameters_initial_guess_procedure"](
+                    self.models[i]["model"], self.xi, self.zi[:, i]
+                )
+
             else:
-                covparam0 = self.models[i]['model'].covparam
+                covparam0 = self.models[i]["model"].covparam
 
-            nlrl, dnlrl = self.models[i]['make_selection_criterion'](
-                self.models[i]['model'],
-                self.xi,
-                self.zi[:, i])
+            crit, dcrit = self.models[i]["make_selection_criterion"](
+                self.models[i]["model"], self.xi, self.zi[:, i]
+            )
 
-            self.models[i]['model'].covparam = gp.kernel.autoselect_parameters(
-                covparam0,
-                nlrl,
-                dnlrl)
+            covparam, info = gp.kernel.autoselect_parameters(
+                covparam0, crit, dcrit, silent=True, return_info=True
+            )
+
+            self.models[i]["model"].covparam = covparam
+
+            self.models[i]["info"] = info
+
+            self.models[i]["info"]["covparam0"] = covparam0
+            self.models[i]["info"]["covparam"] = covparam
+            self.models[i]["info"]["selection_criterion"] = crit
+            self.models[i]["info"]["time"] = time.time() - tic
 
     def predict(self, xt):
         """Prediction"""
         zpm = np.empty((xt.shape[0], self.output_dim))
         zpv = np.empty((xt.shape[0], self.output_dim))
         for i in range(self.output_dim):
-            zpm[:, i], zpv[:, i] = self.models[i]['model'].predict(
-                self.xi,
-                self.zi[:, i],
-                xt)
+            zpm[:, i], zpv[:, i] = self.models[i]["model"].predict(
+                self.xi, self.zi[:, i], xt
+            )
         zpv = np.maximum(zpv, 0)
         return zpm, zpv
 
-    def conditional_simulations(self, xt, n_samplepaths, type='intersection'):
+    def conditional_simulations(self, xt, n_samplepaths, type="intersection"):
         """Generate conditional sample paths
 
         Parameters
@@ -124,7 +147,7 @@ class SequentialPrediction:
             Simulation points
         n_samplepaths : int
             Number of sample paths
-        type : 'intersection', 'disjoint' 
+        type : 'intersection', 'disjoint'
             If type is 'intersection', xi and xt may have a non-empty
             intersection (as when xi is a subset of xt).
             If type is 'disjoint', xi and xt must be disjoint
@@ -137,27 +160,23 @@ class SequentialPrediction:
         nt = xt.shape[0]
 
         self.xtsim = np.vstack((self.xi, xt))
-        if type == 'intersection':
-            self.xtsim, indices = np.unique(
-                self.xtsim,
-                return_inverse=True,
-                axis=0)
+        if type == "intersection":
+            self.xtsim, indices = np.unique(self.xtsim, return_inverse=True, axis=0)
             xi_ind = indices[0:ni]
-            xt_ind = indices[ni:(ni+nt)]
+            xt_ind = indices[ni : (ni + nt)]
             n = self.xtsim.shape[0]
-        elif type == 'disjoint':
+        elif type == "disjoint":
             xi_ind = np.range(ni)
             xt_ind = np.range(nt) + ni
             n = ni + nt
 
         # unconditional sample paths on xtsim
-        self.zsim = np.empty(
-            (n, n_samplepaths, self.output_dim))
+        self.zsim = np.empty((n, n_samplepaths, self.output_dim))
 
         for i in range(self.output_dim):
-            self.zsim[:, :, i] = self.models[i]['model'].sample_paths(
-                self.xtsim,
-                n_samplepaths)
+            self.zsim[:, :, i] = self.models[i]["model"].sample_paths(
+                self.xtsim, n_samplepaths
+            )
 
         # conditional sample paths
         zpm = np.empty((nt, self.output_dim))
@@ -166,20 +185,15 @@ class SequentialPrediction:
         zpsim = np.empty((nt, n_samplepaths, self.output_dim))
 
         for i in range(self.output_dim):
-            zpm[:, i], zpv[:, i], lambda_t[:, :, i] = self.models[i]['model'].predict(
-                self.xi,
-                self.zi[:, i],
-                xt,
-                return_lambdas=True)
-            zpsim[:, :, i] = self.models[i]['model'].conditional_sample_paths(
-                self.zsim[:, :, i],
-                xi_ind,
-                self.zi[:, i],
-                xt_ind,
-                lambda_t[:, :, i])
+            zpm[:, i], zpv[:, i], lambda_t[:, :, i] = self.models[i]["model"].predict(
+                self.xi, self.zi[:, i], xt, return_lambdas=True
+            )
+            zpsim[:, :, i] = self.models[i]["model"].conditional_sample_paths(
+                self.zsim[:, :, i], xi_ind, self.zi[:, i], xt_ind, lambda_t[:, :, i]
+            )
 
         if self.output_dim == 1:
-            # drop the last dimension
+            # drop last dimension
             return zpsim.reshape((zpsim.shape[0], zpsim.shape[1]))
         else:
             return zpsim

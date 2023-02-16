@@ -1,7 +1,7 @@
 '''Implement a sketch of the EI algorithm%
 
 Author: Emmanuel Vazquez <emmanuel.vazquez@centralesupelec.fr>
-Copyright (c) 2022, CentraleSupelec
+Copyright (c) 2022-2023, CentraleSupelec
 License: GPLv3 (see LICENSE)
 
 '''
@@ -9,16 +9,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 import gpmp as gp
 import gpmpcontrib.optim.expectedimprovement as ei
-import gpmpcontrib.sampcrit as sampcrit
-import gpmpcontrib.misc.computer_experiment as cpexp
+import gpmpcontrib.samplingcriteria as sampcrit
+import gpmpcontrib.computerexperiment as cptexp
 
 ## -- definition of a mono-objective problem
 
-problem = cpexp.ComputerExperiment(
-    1,                              # dim search space
+problem = cptexp.ComputerExperiment(
+    1,                              # dim of search space
     [[-1], [1]],                    # search box
     1,                              # dim output
-    gp.misc.testfunctions.twobumps  # function
+    gp.misc.testfunctions.twobumps  # test function
 )
 
 ## -- create initial dataset
@@ -27,6 +27,7 @@ nt = 2000
 xt = gp.misc.designs.regulargrid(problem.input_dim, nt, problem.input_box)
 zt = gp.misc.testfunctions.twobumps(xt)
 
+ni = 3
 ind = [100, 1000, 1600]
 xi = xt[ind]
 
@@ -53,7 +54,7 @@ def plot(show=True, x=None, z=None):
     fig.plotdata(eialgo.xi, eialgo.zi)
     fig.plotgp(xt, zpm, zpv, colorscheme='simple')
     fig.ylabel('$z$')
-    fig.title('Posterior GP')
+    fig.title(f'Posterior GP, ni={eialgo.xi.shape[0]}')
     fig.subplot(2)
     fig.plot(xt, -ei, 'k', linewidth=0.5)
     fig.ylabel('EI')
@@ -71,7 +72,13 @@ def plot(show=True, x=None, z=None):
 plot()
 
 # make n = 3 new evaluations
-n = 3
+n = 5
 for i in range(n):
     eialgo.step()
     plot(show=True)
+
+# print model diagnosis
+gp.misc.modeldiagnosis.diag(eialgo.models[0]['model'],
+                            eialgo.models[0]['info'],
+                            eialgo.xi,
+                            eialgo.zi)

@@ -1,11 +1,8 @@
-'''Helper functions for sequential designs
-
-Author: Emmanuel Vazquez <emmanuel.vazquez@centralesupelec.fr>
-Copyright (c) 2022, CentraleSupelec
-License: GPLv3 (see LICENSE)
-
-'''
-
+# --------------------------------------------------------------
+# Author: Emmanuel Vazquez <emmanuel.vazquez@centralesupelec.fr>
+# Copyright (c) 2022-2023, CentraleSupelec
+# License: GPLv3 (see LICENSE)
+# --------------------------------------------------------------
 import numpy as np
 import scipy.stats as stats
 
