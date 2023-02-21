@@ -61,7 +61,7 @@ zt_opt_b = pareto.pareto_points(zt)
 
 def figure01():
     plt.plot(zt[:, 0], zt[:, 1], 'bo', markersize=2)
-    pareto.plot_pareto(zt[zt_opt_b])
+    pareto.plot_pareto(plt.gca(), zt[zt_opt_b])
     plt.xlabel('$f_1$')
     plt.ylabel('$f_2$')
     plt.title('Pareto front')
@@ -100,18 +100,18 @@ figure02()
 def figure03():
     # -- conditional Pareto fronts
     nsim = 6
-    zpsim = sp.conditional_simulations(xt, nsim)
+    sp.compute_conditional_simulations(n_samplepaths=nsim, xt=xt)
     plt.plot(zt[:, 0], zt[:, 1], 'bo', markersize=2)
     plt.plot(zi[:, 0], zi[:, 1], 'o', markersize=5, color='lime')
-    pareto.plot_pareto(zt[zt_opt_b])
+    pareto.plot_pareto(plt.gca(), zt[zt_opt_b])
     
     for i in range(nsim):
-        zpsim_opt_b = pareto.pareto_points(zpsim[:, i, :])
-        pareto.plot_pareto(zpsim[zpsim_opt_b, i, :], color='orange')
+        zpsim_opt_b = pareto.pareto_points(sp.zpsim[:, i, :])
+        pareto.plot_pareto(plt.gca(), sp.zpsim[zpsim_opt_b, i, :], color='orange')
     zpm, zpv = sp.predict(xt)
     zpm_opt_b = pareto.pareto_points(zpm)
 
-    pareto.plot_pareto(zpm[zpm_opt_b], color='magenta')
+    pareto.plot_pareto(plt.gca(), zpm[zpm_opt_b], color='magenta')
     plt.title('Posterior Pareto fronts')
     plt.xlabel('$f_1$')
     plt.ylabel('$f_2$')
@@ -173,14 +173,14 @@ def figure04():
     zpm, zpv = sp.predict(xt)
     # -- conditional Pareto fronts
     nsim = 6
-    zpsim = sp.conditional_simulations(xt, nsim)
+    sp.compute_conditional_simulations(n_samplepaths=nsim, xt=xt)
     plt.plot(zt[:, 0], zt[:, 1], 'bo', markersize=2)
-    pareto.plot_pareto(zt[zt_opt_b])
+    pareto.plot_pareto(plt.gca(), zt[zt_opt_b])
     for i in range(nsim):
-        zpsim_opt_b = pareto.pareto_points(zpsim[:, i, :])
-        pareto.plot_pareto(zpsim[zpsim_opt_b, i, :], color='orange')
+        zpsim_opt_b = pareto.pareto_points(sp.zpsim[:, i, :])
+        pareto.plot_pareto(plt.gca(), sp.zpsim[zpsim_opt_b, i, :], color='orange')
     zpm_opt_b = pareto.pareto_points(zpm)
-    pareto.plot_pareto(zpm[zpm_opt_b], color='magenta')
+    pareto.plot_pareto(plt.gca(), zpm[zpm_opt_b], color='magenta')
     plt.plot(sp.zi[:, 0], sp.zi[:, 1], 'o', markersize=5, color='lime')
     plt.title('Posterior Pareto fronts')
     plt.xlabel('$f_1$')

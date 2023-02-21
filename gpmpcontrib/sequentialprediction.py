@@ -32,10 +32,13 @@ class SequentialPrediction:
         self.output_dim = output_dim
         self.build_models(models)
 
-        # unconditional simulations
+        # unconditional & conditional simulations
         self.n_samplepaths = None
-        self.zsim = None
         self.xtsim = None
+        self.xtsim_xi_ind = None
+        self.xtsim_xt_ind = None
+        self.zsim = None
+        self.zpsim = None
 
     def __repr__(self):
         info = {
@@ -138,7 +141,14 @@ class SequentialPrediction:
         zpv = np.maximum(zpv, 0)
         return zpm, zpv
 
-    def conditional_simulations(self, xt, n_samplepaths, type="intersection"):
+    def compute_conditional_simulations(
+            self,
+            compute_zsim=True,
+            n_samplepaths=0,
+            xt='None',
+            type='intersection',
+            method='chol'
+    ):
         """Generate conditional sample paths
 
         Parameters
@@ -151,49 +161,53 @@ class SequentialPrediction:
             If type is 'intersection', xi and xt may have a non-empty
             intersection (as when xi is a subset of xt).
             If type is 'disjoint', xi and xt must be disjoint
+        compute_zsim : compute zsim if True or else use self.zsim
+        method : method to draw unconditional sample paths
 
         """
+        if compute_zsim:
+            # initialize self.xtsim and unconditional sample paths on self.xtsim
+            self.n_samplepaths = n_samplepaths
+            ni = self.xi.shape[0]
+            nt = xt.shape[0]
 
-        # initialize sample paths
-        self.n_samplepaths = n_samplepaths
-        ni = self.xi.shape[0]
-        nt = xt.shape[0]
+            self.xtsim = np.vstack((self.xi, xt))
+            if type == "intersection":
+                self.xtsim, indices = np.unique(self.xtsim, return_inverse=True, axis=0)
+                self.xtsim_xi_ind = indices[0:ni]
+                self.xtsim_xt_ind = indices[ni : (ni + nt)]
+                n = self.xtsim.shape[0]
+            elif type == "disjoint":
+                self.xtsim_xi_ind = np.arange(ni)
+                self.xtsim_xt_ind = np.arange(nt) + ni
+                n = ni + nt
 
-        self.xtsim = np.vstack((self.xi, xt))
-        if type == "intersection":
-            self.xtsim, indices = np.unique(self.xtsim, return_inverse=True, axis=0)
-            xi_ind = indices[0:ni]
-            xt_ind = indices[ni : (ni + nt)]
-            n = self.xtsim.shape[0]
-        elif type == "disjoint":
-            xi_ind = np.range(ni)
-            xt_ind = np.range(nt) + ni
-            n = ni + nt
+            # sample paths on xtsim
+            self.zsim = np.empty((n, n_samplepaths, self.output_dim))
 
-        # unconditional sample paths on xtsim
-        self.zsim = np.empty((n, n_samplepaths, self.output_dim))
-
-        for i in range(self.output_dim):
-            self.zsim[:, :, i] = self.models[i]["model"].sample_paths(
-                self.xtsim, n_samplepaths
-            )
+            for i in range(self.output_dim):
+                self.zsim[:, :, i] = self.models[i]["model"].sample_paths(
+                    self.xtsim, self.n_samplepaths, method='svd'
+                )
 
         # conditional sample paths
         zpm = np.empty((nt, self.output_dim))
         zpv = np.empty((nt, self.output_dim))
         lambda_t = np.empty((ni, nt, self.output_dim))
-        zpsim = np.empty((nt, n_samplepaths, self.output_dim))
+        self.zpsim = np.empty((nt, n_samplepaths, self.output_dim))
 
         for i in range(self.output_dim):
             zpm[:, i], zpv[:, i], lambda_t[:, :, i] = self.models[i]["model"].predict(
-                self.xi, self.zi[:, i], xt, return_lambdas=True
+                self.xi, self.zi[:, i], self.xtsim[self.xtsim_xt_ind], return_lambdas=True
             )
-            zpsim[:, :, i] = self.models[i]["model"].conditional_sample_paths(
-                self.zsim[:, :, i], xi_ind, self.zi[:, i], xt_ind, lambda_t[:, :, i]
+            self.zpsim[:, :, i] = self.models[i]["model"].conditional_sample_paths(
+                self.zsim[:, :, i],
+                self.xtsim_xi_ind,
+                self.zi[:, i],
+                self.xtsim_xt_ind,
+                lambda_t[:, :, i],
             )
 
         if self.output_dim == 1:
             # drop last dimension
-            return zpsim.reshape((zpsim.shape[0], zpsim.shape[1]))
-        else:
-            return zpsim
+            self.zpsim = self.zpsim.reshape((self.zpsim.shape[0], self.zpsim.shape[1]))
