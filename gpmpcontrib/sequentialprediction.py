@@ -32,6 +32,9 @@ class SequentialPrediction:
         self.output_dim = output_dim
         self.build_models(models)
 
+        # parameter selection
+        self.force_param_initial_guess = False
+
         # unconditional & conditional simulations
         self.n_samplepaths = None
         self.xtsim = None
@@ -105,7 +108,7 @@ class SequentialPrediction:
 
             tic = time.time()
 
-            if self.models[i]["model"].covparam is None:
+            if self.models[i]["model"].covparam is None or self.force_param_initial_guess:
                 covparam0 = self.models[i]["parameters_initial_guess_procedure"](
                     self.models[i]["model"], self.xi, self.zi[:, i]
                 )
