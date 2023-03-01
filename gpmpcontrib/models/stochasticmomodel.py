@@ -148,8 +148,8 @@ def build_models(output_dim):
     # same hyper prior for all outputs
 
     # TODO : set mean prior for sigma^2 adaptively
-    mean_prior = np.array([0, -np.log(1 / 10), -np.log(1 / 10)])
-    invcov_prior = np.diag(np.ones(3) / np.log(10)**2)
+    mean_prior = np.array([0, -np.log(1 / 3), -np.log(1 / 3)])
+    invcov_prior = np.diag([0, 1 / np.log(10/3)**2, 1 / np.log(10/3)**2])
 
     # same remap criterion for all outputs
     make_remap_criterion = build_make_remap_criterion(mean_prior, invcov_prior)
