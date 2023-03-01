@@ -160,10 +160,22 @@ def distance(x, y):
     """
     y2 = np.sum(y**2, axis=1)
     x2 = np.reshape(np.sum(x**2, axis=1), [-1, 1])
-    d = np.sqrt(x2 + y2 - 2 * np.inner(x, y))
+    d = np.sqrt(np.abs(x2 + y2 - 2 * np.inner(x, y)))
 
     return d
 
+def hausdorff_distance(z1, z2):
+    d = distance(z1, z2)
+
+    dmin0 = np.min(d, axis=0)
+    dmin1 = np.min(d, axis=1)
+    hd0, hd1 = np.max(dmin0), np.max(dmin1) 
+    hd = np.maximum(hd0, hd1)
+    
+    if np.isnan(hd):
+        __import__("pdb").set_trace()
+
+    return hd
 
 def directed_hausdorff_distance(z1, z2):
     d = distance(z1, z2)
