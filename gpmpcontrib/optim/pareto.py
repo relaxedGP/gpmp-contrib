@@ -113,7 +113,7 @@ def dominated_area_2d(z_ref, z_opt):
     # threshold wrt zref
     z_opt = np.minimum(z_ref, z_opt)
 
-    # set nadir point
+    # set bottom-left reference point
     z_0 = np.array([z_opt[0, 0], z_opt[n-1, 1]])
 
     # box area
@@ -165,7 +165,7 @@ def distance(x, y):
     return d
 
 
-def hausdorff_distance(z1, z2):
+def directed_hausdorff_distance(z1, z2):
     d = distance(z1, z2)
     dmin = np.min(d, axis=0)
     hd = np.max(dmin)
