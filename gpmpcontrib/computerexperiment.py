@@ -92,47 +92,49 @@ class ComputerExperiment:
     ```python
     import numpy as np
 
-    def _g6_objective(x):
+    def _pb_objective(x):
         return (x[:, 0] - 10)**3 + (x[:, 1] - 20)**3
 
-    def _g6_constraints(x):
+    def _pb_constraints(x):
         c1 = - (x[:, 0] - 5)**2 - (x[:, 1] - 5)**2 + 100
         c2 = (x[:, 0] - 6)**2 + (x[:, 1] - 5)**2 - 82.81
         return np.column_stack((c1, c2))
 
-    _g6_dict = {
+    _pb_dict = {
         "input_dim": 2,
         "input_box": [[13, 0], [100, 100]],
-        "single_objective": _g6_objective,
-        "single_constraint": {'function': _g6_constraints, 'output_dim': 2, 'bounds': [[100., np.inf], [-np.inf, 82.81]]}
+        "single_objective": _pb_objective,
+        "single_constraint": {'function': _pb_constraints,
+                              'output_dim': 2,
+                              'bounds': [[100., np.inf], [-np.inf, 82.81]]}
     }
 
-    g6 = ComputerExperiment(
-        _g6_dict["input_dim"],
-        _g6_dict["input_box"],
-        single_objective=_g6_dict["single_objective"],
-        single_constraint=_g6_dict["single_constraint"]
+    pb = ComputerExperiment(
+        _pb_dict["input_dim"],
+        _pb_dict["input_box"],
+        single_objective=_pb_dict["single_objective"],
+        single_constraint=_pb_dict["single_constraint"]
     )
 
     # alternative definition
 
-    def _g6_evaluation(x):
-        return np.column_stack((_g6_objective(x), _g6_constraints(x)))
+    def _pb_evaluation(x):
+        return np.column_stack((_pb_objective(x), _pb_constraints(x)))
 
-    g6 = ComputerExperiment(
-        _g6_dict["input_dim"],
-        _g6_dict["input_box"],
+    pb = ComputerExperiment(
+        _pb_dict["input_dim"],
+        _pb_dict["input_box"],
         single_function={
-            'function': _g6_evaluation,
+            'function': _pb_evaluation,
             'output_dim': 1+ 2,
             'type': ["objective"] + ["constraint"] * 2,
             'bounds': [None] + [[100., np.inf], [-np.inf, 82.81]]
         }
     )
-    print(g6)
+    print(pb)
     x = np.array([[50.0, 50.0], [80., 80.]])
-    g6.eval(x)
-    g6.eval_constraints(x) # Note that this will use the previous computation
+    pb.eval(x)
+    pb.eval_constraints(x) # Note that this will use the previous computation
     """
 
     def __init__(
@@ -282,6 +284,22 @@ class ComputerExperiment:
 
         return "\n".join(details)
 
+    def __call__(self, x):
+        """
+        Allows the instance to be called like a function, which internally calls the eval method.
+
+        Parameters
+        ----------
+        x : array_like
+            The input values at which to evaluate the functions.
+
+        Returns
+        -------
+        ndarray
+            The evaluated results from the function or functions.
+        """
+        return self.eval(x)
+    
     def get_constraint_bounds(self):
         return np.array(
             [func["bounds"] for func in self.functions if func["type"] == "constraint"]
