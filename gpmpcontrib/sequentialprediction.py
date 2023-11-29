@@ -1,10 +1,26 @@
-"""Sequential prediction object
+"""Sequential Prediction Module
+
+This module contains the `SequentialPrediction` class, which
+facilitates sequential predictions in Gaussian Process (GP) models. It
+allows building and storing GP models, managing datasets, appending
+new evaluations, making predictions, and simulating conditional sample
+paths.
+
+Classes
+-------
+SequentialPrediction
+    A class that encapsulates the functionality for sequential
+    predictions using GP models.  It manages datasets, GP models, and
+    performs various operations like updating models, making
+    predictions, and generating conditional sample paths.
+
 
 Author: Emmanuel Vazquez <emmanuel.vazquez@centralesupelec.fr>
 Copyright (c) 2022-2023, CentraleSupelec
 License: GPLv3 (see LICENSE)
 
 """
+
 import time
 import numpy as np
 import gpmp.num as gnp
@@ -12,16 +28,66 @@ import gpmp as gp
 
 
 class SequentialPrediction:
-    """Sequential predictions made easier:
-    - builds and stores GP models
-    - stores the dataset (xi, zi) of size ni x d, ni x p
-    - append new evaluations
-    - make predicions
-    - simulate conditional sample paths
+    """A class for managing and using Gaussian Process (GP) models for
+    sequential predictions.
+
+    This class is designed to simplify the process of working with GP
+    models for sequential predictions. It allows for the building and
+    storing of GP models, managing datasets, appending new
+    evaluations, making predictions, and simulating conditional sample
+    paths.
+
+    Attributes
+    ----------
+    xi : ndarray
+        The input data points.
+    zi : ndarray
+        The corresponding output values for the input data points.
+    output_dim : int
+        The dimension of the output space.
+    models : list of dicts
+        The list of GP models and their corresponding details.
+    force_param_initial_guess : bool
+        A flag to force using an initial guess for model parameters
+        at each new evaluation.
+    n_samplepaths : int
+        Number of conditional sample paths to simulate.
+    xtsim : ndarray
+        Simulation points for conditional sample paths.
+    xtsim_xi_ind : ndarray
+        Indices for xi in xtsim.
+    xtsim_xt_ind : ndarray
+        Indices for xt in xtsim.
+    zsim : ndarray
+        Unconditional sample paths.
+    zpsim : ndarray
+        Conditional sample paths.
+
+    Methods
+    -------
+    __init__(output_dim=1, models=None)
+        Initializes the SequentialPrediction instance.
+    build_models(models=None)
+        Builds GP models based on the provided models or default settings.
+    set_data(xi, zi)
+        Sets the dataset for the model.
+    set_data_with_model_selection(xi, zi)
+        Sets the dataset and updates model parameters.
+    set_new_eval(xnew, znew)
+        Adds a new evaluation to the dataset.
+    set_new_eval_with_model_selection(xnew, znew)
+        Adds a new evaluation and updates model parameters.
+    update_params()
+        Updates the parameters of the GP models.
+    predict(xt)
+        Makes predictions at the given points.
+    compute_conditional_simulations(...)
+        Generates conditional sample paths based on the current model and data.
+
     """
 
     def __init__(self, output_dim=1, models=None):
-        """properties initialization"""
+        """Initializes the SequentialPrediction instance with specified output dimension and models."""
 
         # dataset
         # xi : ndarray(ni, d)
@@ -53,6 +119,7 @@ class SequentialPrediction:
         return str(info)
 
     def build_models(self, models):
+        """Builds GP models based on the provided models or default settings."""
         if models is None:
             self.models = [
                 {
@@ -66,15 +133,15 @@ class SequentialPrediction:
             ]
 
             for i in range(self.output_dim):
-                self.models[i]['model'] = gp.core.Model(
+                self.models[i]["model"] = gp.core.Model(
                     self.constant_mean, self.default_covariance, None, None
                 )
                 self.models[i][
                     "parameters_initial_guess_procedure"
                 ] = gp.kernel.anisotropic_parameters_initial_guess
-                self.models[i][
-                    "selection_criterion"
-                ] = self.models[i]['model'].negative_log_restricted_likelihood
+                self.models[i]["selection_criterion"] = self.models[i][
+                    "model"
+                ].negative_log_restricted_likelihood
         else:
             self.models = models
 
@@ -106,55 +173,55 @@ class SequentialPrediction:
         """Parameter selection"""
 
         for i in range(self.output_dim):
-
             tic = time.time()
 
-            if self.models[i]['model'].covparam is None or self.force_param_initial_guess:
-                covparam0 = self.models[i]['parameters_initial_guess_procedure'](
-                    self.models[i]['model'], self.xi, self.zi[:, i]
+            if (
+                self.models[i]["model"].covparam is None
+                or self.force_param_initial_guess
+            ):
+                covparam0 = self.models[i]["parameters_initial_guess_procedure"](
+                    self.models[i]["model"], self.xi, self.zi[:, i]
                 )
 
             else:
-                covparam0 = self.models[i]['model'].covparam
+                covparam0 = self.models[i]["model"].covparam
 
             covparam0 = gnp.asarray(covparam0)
-            
+
             crit, dcrit = gp.kernel.make_selection_criterion_with_gradient(
-                self.models[i]['selection_criterion'],
-                self.xi,
-                self.zi[:, i]
+                self.models[i]["selection_criterion"], self.xi, self.zi[:, i]
             )
-            
+
             covparam, info = gp.kernel.autoselect_parameters(
                 covparam0, crit, dcrit, silent=True, info=True
             )
 
-            self.models[i]['model'].covparam = gnp.asarray(covparam)
+            self.models[i]["model"].covparam = gnp.asarray(covparam)
 
-            self.models[i]['info'] = info
+            self.models[i]["info"] = info
 
-            self.models[i]['info']['covparam0'] = covparam0
-            self.models[i]['info']['covparam'] = covparam
-            self.models[i]['info']['selection_criterion'] = crit
-            self.models[i]['info']['time'] = time.time() - tic
+            self.models[i]["info"]["covparam0"] = covparam0
+            self.models[i]["info"]["covparam"] = covparam
+            self.models[i]["info"]["selection_criterion"] = crit
+            self.models[i]["info"]["time"] = time.time() - tic
 
     def predict(self, xt):
         """Prediction"""
         zpm = np.empty((xt.shape[0], self.output_dim))
         zpv = np.empty((xt.shape[0], self.output_dim))
-        for i in range(self.output_dim):              
-            zpm[:, i], zpv[:, i] = self.models[i]['model'].predict(
+        for i in range(self.output_dim):
+            zpm[:, i], zpv[:, i] = self.models[i]["model"].predict(
                 self.xi, self.zi[:, i], xt
             )
         return zpm, zpv
 
     def compute_conditional_simulations(
-            self,
-            compute_zsim=True,
-            n_samplepaths=0,
-            xt='None',
-            type='intersection',
-            method='chol'
+        self,
+        compute_zsim=True,
+        n_samplepaths=0,
+        xt="None",
+        type="intersection",
+        method="chol",
     ):
         """Generate conditional sample paths
 
@@ -194,8 +261,8 @@ class SequentialPrediction:
 
             for i in range(self.output_dim):
                 self.zsim[:, :, i] = gnp.to_np(
-                    self.models[i]['model'].sample_paths(
-                        self.xtsim, self.n_samplepaths, method='svd'
+                    self.models[i]["model"].sample_paths(
+                        self.xtsim, self.n_samplepaths, method="svd"
                     )
                 )
 
@@ -203,14 +270,14 @@ class SequentialPrediction:
         self.zpsim = np.empty((nt, n_samplepaths, self.output_dim))
 
         for i in range(self.output_dim):
-            zpm, zpv, lambda_t = self.models[i]['model'].predict(
+            zpm, zpv, lambda_t = self.models[i]["model"].predict(
                 self.xi,
                 self.zi[:, i],
                 self.xtsim[self.xtsim_xt_ind],
-                return_lambdas=True
+                return_lambdas=True,
             )
             self.zpsim[:, :, i] = gnp.to_np(
-                self.models[i]['model'].conditional_sample_paths(
+                self.models[i]["model"].conditional_sample_paths(
                     self.zsim[:, :, i],
                     self.xtsim_xi_ind,
                     self.zi[:, i],
@@ -218,7 +285,6 @@ class SequentialPrediction:
                     lambda_t,
                 )
             )
-            
 
         if self.output_dim == 1:
             # drop last dimension
