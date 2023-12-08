@@ -3,13 +3,12 @@
 # Copyright (c) 2022-2023, CentraleSupelec
 # License: GPLv3 (see LICENSE)
 # --------------------------------------------------------------
-import numpy as np
-import scipy.stats as stats
+import gpmp.num as gnp
 
 
 def isinbox(box, x):
-    b = np.logical_and(np.all(x >= box[0], axis=1),
-                       np.all(x <= box[1], axis=1))
+    b = gnp.logical_and(gnp.all(x >= box[0], axis=1),
+                        gnp.all(x <= box[1], axis=1))
     return b
 
 
@@ -24,18 +23,25 @@ def probability_excursion(t, zpm, zpv):
      where M is the number of points where the EI must be
      computed. The output has size M x 1.
     '''
-    p = np.empty(zpm.shape)
+    p = gnp.empty(zpm.shape)
     delta = zpm - t
-    sigma = np.sqrt(zpv)
+    sigma = gnp.sqrt(zpv)
     b = sigma > 0
 
-    # Compute p where sigma > 0
-    u = delta[b] / sigma[b]
-    p[b] = stats.norm.cdf(u)
+    # Where sigma > 0
+    u = gnp.where(b, delta / sigma, 0)  # Avoid division by zero
+    p = gnp.where(b, gnp.normal.cdf(u), 0)  # Compute p where sigma > 0
 
-    # Compute p where sigma == 0
-    b = np.logical_not(b)
-    p[b] = delta[b] > 0
+    # Condition where sigma == 0
+    p = gnp.where(b, p, delta > 0)
+    
+    # # Compute p where sigma > 0
+    # u = delta[b] / sigma[b]
+    # p[b] = gnp.normal.cdf(u)
+
+    # # Compute p where sigma == 0
+    # b = gnp.logical_not(b)
+    # p[b] = gnp.asdouble(delta[b] > 0)
 
     return p
 
@@ -44,22 +50,21 @@ def probability_box(box, zpm, zpv):
     '''
     dim_output = zpm.shape[1]
 
-    pn = np.empty(zpm.shape)
+    pn = gnp.empty(zpm.shape)
     for j in range(dim_output):
 
         delta_min = box[0][j] - zpm[:, j] 
         delta_max = box[1][j] - zpm[:, j]
-        sigma = np.sqrt(zpv)
+        sigma = gnp.sqrt(zpv)
         b = sigma > 0
 
         # Compute pn where sigma > 0
-        u_min = delta_min[b] / sigma[b]
-        u_max = delta_max[b] / sigma[b]
-        pn[b] = stats.norm.cdf(u_max) - stats.norm.cdf(u_min)
+        u_min = gnp.where(b, delta_min / sigma, 0)
+        u_max = gnp.where(b, delta_max / sigma, 0)
+        pn = gnp.where(b, normal.cdf(u_max) - normal.cdf(u_min), 0)
 
-        # Compute p where sigma == 0
-        b = np.logical_not(b)
-        pn[b] = delta_max[b] > 0 & delta_min[b] < 0
+        # Compute pn where sigma == 0
+        pn = gnp.where(b, pn, delta_max > 0 & delta_min < 0)
 
         return pn
 
@@ -87,20 +92,19 @@ def expected_improvement(t, zpm, zpv):
         Holland, New York, 1978.
 
     '''
-    ei = np.empty(zpm.shape)
+    ei = gnp.empty(zpm.shape)
     delta = zpm - t
-    sigma = np.sqrt(zpv)
+    sigma = gnp.sqrt(zpv)
     b = sigma > 0
 
     # Compute the EI where sigma > 0
-    u = delta[b] / sigma[b]
-    ei[b] = sigma[b] * (stats.norm.pdf(u) + u * stats.norm.cdf(u))
+    u = gnp.where(b, delta / sigma, 0)
+    ei = gnp.where(b, sigma * (gnp.normal.pdf(u) + u * gnp.normal.cdf(u)), 0)
 
     # Compute the EI where sigma == 0
-    b = np.logical_not(b)
-    ei[b] = np.maximum(0, delta[b])
+    ei = gnp.where(b, ei, gnp.maximum(0, delta))
 
     # Correct numerical inaccuracies
-    ei[ei < 0] = 0
+    ei = gnp.where(ei > 0, ei, 0)
 
     return ei

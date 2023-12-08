@@ -1,25 +1,24 @@
 # --------------------------------------------------------------
 # Authors: Emmanuel Vazquez <emmanuel.vazquez@centralesupelec.fr>
-#          Sébastien Petit
 # Copyright (c) 2023, CentraleSupelec
 # License: GPLv3 (see LICENSE)
 # --------------------------------------------------------------
 import gpmp.num as gnp
 import gpmp as gp
-import gpmpcontrib.sequentialprediction as spred
 import gpmpcontrib.samplingcriteria as sampcrit
-import gpmpcontrib.smc as gpsmc
+from gpmpcontrib import SequentialPrediction
+from gpmpcontrib import SMC
 
 
-class ExpectedImprovement(spred.SequentialPrediction):
+class ExpectedImprovement(SequentialPrediction):
 
-    def __init__(self, problem, model=None, options=None):
+    def __init__(self, problem, model, options=None):
 
         # computer experiments problem
         self.computer_experiments_problem = problem
 
         # model initialization
-        super().__init__(output_dim=1, models=model)
+        super().__init__(model=model)
 
         # options
         self.options = self.set_options(options)
@@ -38,15 +37,16 @@ class ExpectedImprovement(spred.SequentialPrediction):
         return default_options
 
     def init_smc(self, n_smc):
-        return gpsmc.SMC(self.computer_experiments_problem.input_box, n_smc)
+        return SMC(self.computer_experiments_problem.input_box, n_smc)
 
     def log_prob_excursion(self, x):
         min_threshold = 1e-6
-        b = sampcrit.isinbox(self.computer_experiments_problem.input_box, x)
+        input_box = gnp.asarray(self.computer_experiments_problem.input_box)
+        b = sampcrit.isinbox(input_box, x)
 
-        zpm, zpv = self.predict(x)
+        zpm, zpv = self.predict(x, convert_out=False)
 
-        minimum = -gnp.numpy.min(self.zi)
+        minimum = -gnp.min(self.zi)
 
         log_prob_excur = gnp.where(
             gnp.asarray(b),
@@ -63,7 +63,7 @@ class ExpectedImprovement(spred.SequentialPrediction):
             -gnp.inf
         )
 
-        return gnp.to_np(log_prob_excur)
+        return log_prob_excur
 
     def update_search_space(self):
         self.smc.step(self.log_prob_excursion)
@@ -76,7 +76,7 @@ class ExpectedImprovement(spred.SequentialPrediction):
         else:
             super().set_data(xi, zi)
 
-        self.minimum = gnp.numpy.min(self.zi)
+        self.minimum = gnp.min(self.zi)
 
         if update_search_space:
             self.update_search_space()
@@ -89,14 +89,14 @@ class ExpectedImprovement(spred.SequentialPrediction):
         else:
             self.set_new_eval(xnew, znew)
 
-        self.minimum = gnp.numpy.min(self.zi)
+        self.minimum = gnp.min(self.zi)
 
         if update_search_space:
             self.update_search_space()
 
     def step(self):
         # evaluate ei on the search space
-        zpm, zpv = self.predict(self.smc.x)
+        zpm, zpv = self.predict(self.smc.x, convert_out=False)
         self.ei = sampcrit.expected_improvement(-self.minimum, -zpm, zpv)
     
         # make new evaluation

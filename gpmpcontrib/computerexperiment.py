@@ -15,8 +15,10 @@ import numpy as np
 #                                                                            #
 ##############################################################################
 
+
 class ComputerExperiment:
-    """A class representing a computer experiment problem, allowing the user to
+    """
+    A class representing a computer experiment problem, allowing the user to
     specify and evaluate functions as either objectives or constraints.
 
     Parameters
@@ -155,7 +157,7 @@ class ComputerExperiment:
 
         self._last_x = None
         self._last_result = None
-        
+
         self._validate_inputs(
             single_function,
             function_list,
@@ -265,20 +267,19 @@ class ComputerExperiment:
 
     def __str__(self):
         details = [
-            f"Computer Experiment:",
-            f"  Input Dimension: {self.input_dim}",
-            f"  Input Box: {self.input_box}",
-            f"  Output Dimension: {self.output_dim}",
-            f"  Functions:",
+            f"Computer Experiment object",
+            f"      Input Dimension : {self.input_dim}",
+            f"            Input Box : {self.input_box}",
+            f"     Output Dimension : {self.output_dim}\n"
         ]
         for i, func in enumerate(self.functions, 1):
             details.extend(
                 [
-                    f"    * Function {i}:",
-                    f"      Type: {func['type']}",
-                    f"      Function: {func['function'].__name__ if callable(func['function']) else func['function']}",
-                    f"      Output Dimension: {func['output_dim']}",
-                    f"      Bounds: {func['bounds']}" if "bounds" in func else "",
+                    f"     ** Function {i} **",
+                    f"                 Type : {func['type']}",
+                    f"             Function : {func['function'].__name__ if callable(func['function']) else func['function']}",
+                    f"     Output Dimension : {func['output_dim']}",
+                    f"               Bounds : {func['bounds']}" if "bounds" in func else "",
                 ]
             )
 
@@ -299,7 +300,7 @@ class ComputerExperiment:
             The evaluated results from the function or functions.
         """
         return self.eval(x)
-    
+
     def get_constraint_bounds(self):
         return np.array(
             [func["bounds"] for func in self.functions if func["type"] == "constraint"]
@@ -314,7 +315,7 @@ class ComputerExperiment:
             self._last_x = x_tuple
             self._last_result = result
             return result
-    
+
     def eval_objectives(self, x):
         results = self.eval(x)
         all_types = [t for func in self.functions for t in func["type"]]
@@ -326,14 +327,20 @@ class ComputerExperiment:
         return results[:, [i for i, t in enumerate(all_types) if t == "constraint"]]
 
     def _eval_functions(self, function_dicts, x):
-        results = []
+        # Check if x has the correct number of dimensions
+        if x.ndim != 2 or x.shape[1] != self.input_dim:
+            raise ValueError(
+                f"Input x must be a 2D array with shape (n, {self.input_dim}), "
+                f"but got shape {x.shape}."
+            )
 
+        results = []
         for func in function_dicts:
             current_function = func["function"]
             current_output_dim = func["output_dim"]
 
             result_temp = current_function(x)
-
+            
             if result_temp.ndim == 1:
                 result_temp = result_temp[:, np.newaxis]
             elif result_temp.ndim == 2 and result_temp.shape[1] != current_output_dim:
@@ -356,35 +363,57 @@ class ComputerExperiment:
 
 class StochasticComputerExperiment(ComputerExperiment):
     """
-    A class representing stochastic computer experiments. It is a subclass of the ComputerExperiment class
-    and extends its functionality to include simulation of noise.
+    A class representing stochastic computer experiments, extending
+    the ComputerExperiment class for stochastic functions. (Gaussian)
+    noise can be added on outputs. This class also enables evaluations
+    by batch at a point to get multiple realizations in a single call.
 
     Attributes
     ----------
     simulated_noise_variance : array-like
-        The variance of the noise to be simulated.
+        The variance of the noise to be simulated for each function.
 
     Methods
     -------
-    __init__(input_dim, input_box, single_function=None, function_list=None, single_objective=None,
-             objective_list=None, single_constraint=None, constraint_list=None, simulated_noise_variance=None)
-        Constructs an instance of StochasticComputerExperiment and initializes the attributes.
+    __init__(input_dim, input_box,
+             single_function=None, function_list=None,
+             single_objective=None, objective_list=None,
+             single_constraint=None, constraint_list=None,
+             simulated_noise_variance=None)
+        Constructs an instance of StochasticComputerExperiment and
+        initializes its attributes.
 
-    eval(x, simulated_noise_variance, batch_size)
-        Evaluates all functions (objectives and constraints) for the given input with simulated noise.
-        If a batch_size is provided, it returns a tensor of size n x output_dim x batch_size.
-        If batch_size is 1, it returns a matrix of size n x output_dim.
+    eval(x, simulated_noise_variance=True, batch_size=1)
+        Evaluates all functions (objectives and constraints), with
+        simulated noise if required.  If a batch_size is provided, it
+        returns an array of size n x output_dim x batch_size.  If
+        batch_size is 1, it returns a matrix of size n x
+        output_dim. The simulated_noise_variance parameter can be set
+        to False to perform noise-free evaluations to get ground
+        noise-free evaluations when noise is simulated.
 
-    eval_objectives(x, simulated_noise_variance, batch_size)
+    eval_objectives(x, simulated_noise_variance=True, batch_size=1)
         Evaluates only the objectives for the given input with simulated noise.
 
-    eval_constraints(x, simulated_noise_variance, batch_size)
+    eval_constraints(x, simulated_noise_variance=True, batch_size=1)
         Evaluates only the constraints for the given input with simulated noise.
 
     Notes
     -----
-    If simulated_noise_variance is set to True, the internal simulated_noise_variance is used.
-    If simulated_noise_variance is False, the result is noise-free.
+    The simulated_noise_variance property describes the variance of
+    simulated noise.  This is useful when the user wants add simulated
+    noise on outputs to assess the performance of an algorithm in
+    presence of stochastic evaluations.
+
+    - If simulated_noise_variance is an array of variances, Gaussian
+      noise is added on each output with noise variance specified by
+      the elements of simulated_noise_variance.
+
+    - If simulated_noise_variance is None, the user should provide the
+      functions to be evaluated as dictionaries with a key
+      "simulated_noise_variance". If the key is absent, no simulated noise
+      is added.
+
     """
 
     def __init__(
@@ -399,7 +428,31 @@ class StochasticComputerExperiment(ComputerExperiment):
         constraint_list=None,
         simulated_noise_variance=None,
     ):
+        """
+        Initialize a StochasticComputerExperiment instance.
 
+        Parameters
+        ----------
+        input_dim : int
+            The dimension of the input space.
+        input_box : list of tuples
+            The input domain specified as a list of tuples.
+        single_function : callable function or dict, optional
+            A single function to be evaluated.
+        function_list : list of callable functions or dicts, optional
+            List of functions to be evaluated.
+        single_objective : function or dict, optional
+            A single objective function to be evaluated.
+        objective_list : list of functions or dicts, optional
+            List of objective functions to be evaluated.
+        single_constraint : function or dict, optional
+            A single constraint function to be evaluated.
+        constraint_list : list of functions or dicts, optional
+            List of constraint functions to be evaluated.
+        simulated_noise_variance : array-like or None, optional
+            The variance of the noise to be simulated for each function.
+
+        """
         # problem setting
         super().__init__(
             input_dim,
@@ -422,10 +475,23 @@ class StochasticComputerExperiment(ComputerExperiment):
         Parameters
         ----------
         function_dicts : list of dict
-            Functions to be evaluated. Each dictionary must contain 'function', 'output_dim', and 'simulated_variance' keys.
-        simulated_noise_variance : array-like or None
-            The provided noise variance. If None, the variance will be extracted from function dictionaries.
+
+            Functions to be evaluated. Each dictionary must contain
+            'function' and 'output_dim' keys. Each dictionary may have a 'simulated_noise_variance' key.
+
+        simulated_noise_variance : array-like, scalar, or None
+            Variances of the noise added on the outputs. If a scalar,
+            it's expanded to an array. If None, the variance will be
+            extracted from function dictionaries. If no
+            'simulated_noise_variance' key is provided in the
+            dictionaries, no simulated noise is added on the outputs.
+
         """
+        # Convert scalar to array
+        if np.isscalar(simulated_noise_variance):
+            total_output_dim = sum(f["output_dim"] for f in function_dicts)
+            simulated_noise_variance = [simulated_noise_variance] * total_output_dim
+
         if simulated_noise_variance is not None:
             # Ensure that simulated_noise_variance has output_dim components
             assert len(simulated_noise_variance) == sum(
@@ -434,12 +500,12 @@ class StochasticComputerExperiment(ComputerExperiment):
             start = 0
             for f in function_dicts:
                 end = start + f["output_dim"]
-                f["simulated_variance"] = simulated_noise_variance[start:end]
+                f["simulated_noise_variance"] = simulated_noise_variance[start:end]
                 start = end
         else:
             for f in function_dicts:
-                if not "simulated_variance" in f:
-                    f["simulated_variance"] = [0.0] * f["output_dim"]
+                if not "simulated_noise_variance" in f:
+                    f["simulated_noise_variance"] = [0.0] * f["output_dim"]
 
     def __str__(self):
         details = [
@@ -456,7 +522,7 @@ class StochasticComputerExperiment(ComputerExperiment):
                     f"      Type: {func['type']}",
                     f"      Function: {func['function'].__name__ if callable(func['function']) else func['function']}",
                     f"      Output Dimension: {func['output_dim']}",
-                    f"      Simulated Variance: {func['simulated_variance']}",
+                    f"      Simulated Noise Variance: {func['simulated_noise_variance']}",
                     f"      Bounds: {func['bounds']}" if "bounds" in func else "",
                 ]
             )
@@ -465,6 +531,13 @@ class StochasticComputerExperiment(ComputerExperiment):
 
     import numpy as np
 
+    def __call__(self, x, simulate_noise=True, batch_size=1):
+        """
+        Allows the instance to be called like a function, which
+        internally calls the eval method.
+
+        """
+        return self.eval(x, simulate_noise, batch_size)
 
     @property
     def simulated_noise_variance(self):
@@ -487,20 +560,23 @@ class StochasticComputerExperiment(ComputerExperiment):
         numpy.ndarray
             The simulated noise variances for each function.
         """
-        return np.concatenate([func['simulated_variance'] for func in self.functions])
+        return np.concatenate(
+            [func["simulated_noise_variance"] for func in self.functions]
+        )
 
-    def eval(self, x, simulated_noise_variance=True, batch_size=1):
+    def eval(self, x, simulate_noise=True, batch_size=1):
         """
         Evaluate all functions (objectives and constraints) for the given input.
+        Include simulated noise if specified.
 
         Parameters
         ----------
         x : array-like
             Input values.
-        simulated_noise_variance : bool
+        simulate_noise : bool
             If True, use the internal simulated_noise_variance.
-            If False or 0.0, the result is noise free.
-            By default True.
+            If False, no noise is added on the outputs.
+            By default False.
         batch_size : int
             The number of batches to evaluate.
             If 1, the result will have shape (n, output_dim).
@@ -512,9 +588,19 @@ class StochasticComputerExperiment(ComputerExperiment):
             Function values for the given input, with optional noise.
         """
 
-        return self._eval_batch(self.functions, x, simulated_noise_variance, batch_size)
+        return self._eval_batch(self.functions, x, simulate_noise, batch_size)
 
-    def _eval_batch(self, function_dicts, x, simulated_noise_variance, batch_size):
+    def eval_objectives(self, x):
+        raise NotImplementedError(
+            "eval_objectives method is not supported in StochasticComputerExperiment."
+        )
+
+    def eval_constraints(self, x):
+        raise NotImplementedError(
+            "eval_constraints method is not supported in StochasticComputerExperiment."
+        )
+
+    def _eval_batch(self, function_dicts, x, simulate_noise, batch_size):
         """
         Evaluate all functions (objectives and constraints) for the given input.
         Include simulated noise if specified.
@@ -523,7 +609,7 @@ class StochasticComputerExperiment(ComputerExperiment):
         ----------
         x : array-like
             Input values.
-        simulated_noise_variance : bool
+        simulate_noise : bool
             See eval()
         batch_size : int
             The number of batches to evaluate.
@@ -540,18 +626,16 @@ class StochasticComputerExperiment(ComputerExperiment):
 
         results = []
         for _ in range(batch_size):
-            results.append(
-                self._eval_functions(function_dicts, x, simulated_noise_variance)
-            )
+            results.append(self._eval_functions(function_dicts, x, simulate_noise))
 
         if batch_size == 1:
             return results[0]
         else:
             return np.dstack(results)
 
-    def _eval_functions(self, function_dicts, x, simulated_noise_variance):
-        """
-        Evaluate the provided functions for the given input and add simulated noise.
+    def _eval_functions(self, function_dicts, x, simulate_noise):
+        """Evaluate the provided functions for the given input and
+        add simulated noise if specified.
 
         Parameters
         ----------
@@ -560,14 +644,16 @@ class StochasticComputerExperiment(ComputerExperiment):
             containing the function to be evaluated.
         x : array-like
             Input values.
-        simulated_noise_variance : bool
-            If True, use the internal 'simulated_variance' of each function.
-            If False or 0.0, the result is noise free.
+        simulate_noise : bool
+            If True, add Gaussian noise using the internal 'simulated_noise_variance' of
+            each function
+            If False, no noise is added
 
         Returns
         -------
         array-like
             Function values for the given input, with simulated noise added.
+
         """
         z_ = []
 
@@ -584,12 +670,12 @@ class StochasticComputerExperiment(ComputerExperiment):
                 z_temp = z_temp.reshape((-1, current_output_dim))
 
             # Add simulated noise
-            if simulated_noise_variance:
+            if simulate_noise:
                 for i in range(current_output_dim):
-                    if func["simulated_variance"][i] > 0.0:
+                    if func["simulated_noise_variance"][i] > 0.0:
                         z_temp[:, i] += np.random.normal(
                             0.0,
-                            np.sqrt(func["simulated_variance"][i]),
+                            np.sqrt(func["simulated_noise_variance"][i]),
                             size=z_temp[:, i].shape,
                         )
 

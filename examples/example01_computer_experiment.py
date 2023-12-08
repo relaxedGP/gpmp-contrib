@@ -2,8 +2,9 @@
 
 This script demonstrates the usage of the ComputerExperiment class
 from the computerexperiment module.  The ComputerExperiment class is
-designed for specifying and evaluating functions as objectives or
-constraints in a computer experiment problem.
+designed for specifying and evaluating functions in a computer
+experiment problem. Additionally, functions can be labeled as
+objectives or constraints.
 
 The script provides two examples:
 1. Using separate objective and constraint functions.
@@ -20,16 +21,16 @@ License: GPLv3 (see LICENSE)
 """
 import numpy as np
 import gpmp as gp
-import gpmpcontrib.computerexperiment as cptexp
+import gpmpcontrib as gpc
 
 
-# Define the objective function for the problem
+# Define an objective function
 def _pb_objective(x):
     """Objective function: calculates a specific mathematical operation."""
     return (x[:, 0] - 10) ** 3 + (x[:, 1] - 20) ** 3
 
 
-# Define the constraint functions for the problem
+# Define two constraint functions
 def _pb_constraints(x):
     """Constraint functions: calculates constraints based on input conditions."""
     c1 = -((x[:, 0] - 5) ** 2) - (x[:, 1] - 5) ** 2 + 100
@@ -55,7 +56,7 @@ _pb_dict = {
 print("  *** Example 1")
 print("      =========")
 # Initialize the ComputerExperiment object with separate objective and constraint
-pb = cptexp.ComputerExperiment(
+pb = gpc.ComputerExperiment(
     _pb_dict["input_dim"],
     _pb_dict["input_box"],
     single_objective=_pb_dict["single_objective"],
@@ -78,12 +79,12 @@ print("\n * Evaluated Results (one objective, two constraints):\n", results)
 # Evaluate the objectives and print the results.
 # Note: This uses the previous computation since x is unchanged
 results_objective = pb.eval_objectives(x)
-print("\n * Objective Evaluation Results:\n", results_objective)
+print("\n * Objectives only:\n", results_objective)
 
 # Evaluate the constraints and print the results.
 # Note: This uses the previous computation since x is unchanged
 results_constraint = pb.eval_constraints(x)
-print("\n * Constraint Evaluation Results:\n", results_constraint)
+print("\n * Constraints only:\n", results_constraint)
 
 # ------------------------------------------------------------------------
 # Example 2: Using a combined function for both objectives and constraints
@@ -99,7 +100,7 @@ def _pb_evaluation(x):
 
 
 # Initialize the ComputerExperiment object with the combined function
-pb = cptexp.ComputerExperiment(
+pb = gpc.ComputerExperiment(
     _pb_dict["input_dim"],
     _pb_dict["input_box"],
     single_function={
@@ -112,10 +113,10 @@ pb = cptexp.ComputerExperiment(
 
 # Display the initialized ComputerExperiment object with the combined function.
 # This configuration is an alternative approach where a single function handles both objectives and constraints.
-print(pb)
+print(' '*2 + str(pb).replace('\n', '\n  '))
 
 # Test the evaluation of the combined function
 results = pb(x)
-print("\n * Evaluated Results (one objective, two constraints):\n", results)
+print("\n  * Evaluated Results (one objective, two constraints):\n", results)
 results_objective = pb.eval_objectives(x)
-print("\n * Objective Evaluation Results:\n", results_objective)
+print("\n  * Objectives only:\n", results_objective)
