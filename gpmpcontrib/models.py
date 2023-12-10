@@ -16,14 +16,20 @@ import gpmp.num as gnp
 import gpmp as gp
 from math import log
 
+# ==============================================================================
+# Model Class
+# ==============================================================================
+
 
 class Model:
     def __init__(
         self,
         name,
         output_dim,
+        parameterized_mean,
         mean_functions=None,
-        mean=None,
+        mean_paramlengths=None,
+        mean_names=None,
         covariance_functions=None,
         covariance_params=None,
         initial_guess_procedures=None,
@@ -38,10 +44,18 @@ class Model:
             The name of the model.
         output_dim : int
             The number of outputs for the model.
+        parameterized_mean : bool
+            If True, the model uses a parameterized mean function. If False,
+            it uses a linear predictor mean function.
         mean_functions : callable, list of callables, optional
-            A list of mean functions, one for each output. If not provided, mean_type is used.
+            A list of mean functions, one for each output. If not provided,
+            a default type is chosen based on the value of parameterized_mean.
+        mean_paramlengths : int or list, optional
+            Lengths of the mean parameter vector, to be used with mean_functions.
+            Specifies the number of parameters for the mean functions.
         mean_names : str or list, optional
-            A default type of mean function to apply to outputs if mean_functions are not specified.
+            Names or identifiers for the mean functions. Used if mean_functions
+            are not explicitly provided.
         covariance_functions : list of callables, optional
             A list of covariance functions, one for each output.
         covariance_params : dict or list of dicts, optional
@@ -53,8 +67,14 @@ class Model:
         """
         self.name = name
         self.output_dim = output_dim
+
+        self.parameterized_mean = parameterized_mean
+        if self.parameterized_mean:
+            mean_type = "parameterized"
+        else:
+            mean_type = "linear_predictor"
         self.mean_functions, self.mean_functions_info = self.set_mean_functions(
-            mean_functions, mean
+            mean_functions, mean_paramlengths, mean_names
         )
         self.covariance_functions = self.set_covariance_functions(
             covariance_functions, build_params=covariance_params
@@ -68,14 +88,15 @@ class Model:
                 self.covariance_functions[i],
                 meanparam=None,
                 covparam=None,
-                meantype="unknown",
+                meantype=mean_type,
             )
             self.models.append(
                 {
                     "output_name": f"output{i}",
                     "model": model,
-                    "mean": "",
-                    "covariance": "",
+                    "mean_fname": self.mean_functions_info[i]["description"],
+                    "mean_paramlength": self.mean_functions_info[i]["param_length"],
+                    "covariance_fname": model.covariance.__name__,
                     "parameters_initial_guess_procedure": None,
                     "pre_selection_criterion": None,
                     "info": None,
@@ -120,8 +141,9 @@ class Model:
         """
         model_info = f"Model Name: {self.name}, Output Dimension: {self.output_dim}\n"
         for i, model in enumerate(self.models):
-            mean = self.mean_functions_info[i]
+            mean_descr = self.mean_functions_info[i]["description"]
             mean_type = model["model"].meantype
+            mean_params = model["model"].meanparam
             covariance = model["model"].covariance.__name__
             cov_params = model["model"].covparam
             initial_guess = model["parameters_initial_guess_procedure"]
@@ -129,8 +151,9 @@ class Model:
 
             model_info += f"\nGaussian process {i}:\n"
             model_info += f"  Output Name: {model['output_name']}\n"
-            model_info += f"  Mean: {mean}\n"
+            model_info += f"  Mean: {mean_descr}\n"
             model_info += f"  Mean Type: {mean_type}\n"
+            model_info += f"  Mean Parameters: {mean_params}\n"
             model_info += f"  Covariance: {covariance}\n"
             model_info += f"  Covariance Parameters: {cov_params}\n"
             model_info += f"  Initial Guess Procedure: {initial_guess.__name__ if initial_guess else 'None'}\n"
@@ -138,17 +161,31 @@ class Model:
 
         return model_info
 
-    def set_mean_functions(self, mean_functions=None, mean_names=None):
+    def set_mean_functions(
+        self,
+        mean_functions=None,
+        mean_paramlengths=None,
+        mean_names=None,
+        build_params=None,
+    ):
         """
-        Set mean functions based on provided mean_functions or mean_type.
+        Set mean functions.
+
+        This function uses provided mean_functions or calls the method
+        self.build_mean_function with mean_names and build_params.
 
         Parameters
         ----------
         mean_functions : list or callable
             The mean functions to be used. Can be a single callable applied to all outputs
             or a list of callables, one for each output.
+        mean_paramlengths : int, list of int, optional
+            Lengths of the mean parameter vector, to be used with mean_functions.
+            Specifies the number of parameters for the mean functions.
         mean_names : str or list
-            Type of mean function to use. Can be "constant", "linear", or a list of such strings.
+            Type of mean function to use. Can be "constant", "linear"... or a list of such strings.
+        build_params : None
+            Unused
 
         Returns
         -------
@@ -161,48 +198,72 @@ class Model:
             If mean_functions or mean_types are not correctly specified.
         NotImplementedError
             If a specified mean_type is not implemented.
-        """
-        mean_functions_info = []
 
+        """
         if mean_functions is not None:
+            if isinstance(mean_paramlength, int):
+                mean_paramlengths = [mean_paramlengths] * self.output_dim
+            elif (
+                isinstance(mean_paramlengths, list)
+                and len(mean_paramlengths) == self.output_dim
+            ):
+                pass
+            else:
+                raise ValueError(
+                    "mean_paramlengths must be an int or a list of length output_dim"
+                )
             if callable(mean_functions):
                 mean_functions = [mean_functions for _ in range(self.output_dim)]
                 mean_functions_info = [
-                    "custom_function" for _ in range(self.output_dim)
-                ]  # Custom function name
+                    {"description": "custom_function", "param_length": param_length}
+                    for param_length in mean_paramlengths
+                ]
             elif (
                 isinstance(mean_functions, list)
                 and len(mean_functions) == self.output_dim
             ):
                 mean_functions_info = [
-                    "custom_function" for _ in mean_functions
-                ]  # Custom function names
+                    {
+                        "description": "custom_function",
+                        "param_length": mean_paramlengths[i],
+                    }
+                    for i in range(self.output_dim)
+                ]
             else:
                 raise ValueError(
                     "mean_functions must be a callable or a list of length output_dim"
                 )
-
         elif isinstance(mean_names, list) and len(mean_names) == self.output_dim:
             mean_functions = []
-            for mt in mean_names:
-                mean_functions.append(self.build_mean_function(mt))
-                mean_functions_info.append(mt)
+            mean_functions_info = []
+            for mn in mean_names:
+                func, param_length = self.build_mean_function(mn)
+                mean_functions.append(func)
+                mean_functions_info.append(
+                    {"description": mn, "param_length": param_length}
+                )
         elif isinstance(mean_names, str):
-            mean_functions = [
-                self.build_mean_function(mean_names) for _ in range(self.output_dim)
-            ]
-            mean_functions_info = [mean_names for _ in range(self.output_dim)]
+            mean_functions = []
+            mean_functions_info = []
+            for _ in range(self.output_dim):
+                func, param_length = self.build_mean_function(mean_names)
+                mean_functions.append(func)
+                mean_functions_info.append(
+                    {"description": mean_names, "param_length": param_length}
+                )
         else:
             raise ValueError("Specify mean_functions or mean_names")
 
         return mean_functions, mean_functions_info
 
     def set_covariance_functions(self, covariance_functions=None, build_params=None):
-        """Set covariance functions based on provided covariance_functions, covariance_type, and parameters.
+        """Set covariance functions
+
+        This method uses provided covariance_functions or calls the method self.build_covariance
 
         Parameters
         ----------
-        covariance_functions : list or callable
+        covariance_functions : list or callable, optional
             The covariance functions to be used.
         build_params : dict or list of dicts
             Parameters for each covariance function, including 'p'.
@@ -317,12 +378,27 @@ class Model:
         return selection_criteria
 
     def make_selection_criterion_with_gradient(
-        self, model, xi_, zi_, pre_selection_criterion
+        self,
+        model,
+        xi_,
+        zi_,
     ):
-        # NB: selection criterion without mean parameter
-        def crit_(covparam):
-            l = pre_selection_criterion(covparam, model, xi_, zi_)
-            return l
+        pre_selection_criterion = model["pre_selection_criterion"]
+        mean_paramlength = model["mean_paramlength"]
+
+        if mean_paramlength > 0:
+            # make a selection criterion with mean and covariance parameters
+            def crit_(param):
+                meanparam = param[:mean_paramlength]
+                covparam = param[mean_paramlength:]
+                l = pre_selection_criterion(model["model"], meanparam, covparam, xi_, zi_)
+                return l
+
+        else:
+            # make a selection criterion without mean parameter
+            def crit_(covparam):
+                l = pre_selection_criterion(model["model"], covparam, xi_, zi_)
+                return l
 
         crit = gnp.jax.jit(crit_)
         dcrit = gnp.jax.jit(gnp.grad(crit))
@@ -341,30 +417,41 @@ class Model:
             tic = time.time()
 
             model = self.models[i]
+            mpl = model["mean_paramlength"]
 
             if model["model"].covparam is None or force_param_initial_guess:
-                covparam0 = model["parameters_initial_guess_procedure"](
-                    model["model"], xi_, zi_[:, i]
-                )
+                if mpl == 0:
+                    meanparam0 = gnp.array([])
+                    covparam0 = model["parameters_initial_guess_procedure"](
+                        model["model"], xi_, zi_[:, i]
+                    )
+                else:
+                    (meanparam0, covparam0) = model["parameters_initial_guess_procedure"](
+                        model["model"], xi_, zi_[:, i]
+                    )
             else:
+                meanparam0 = model["model"].meanparam
                 covparam0 = model["model"].covparam
-
-            covparam0 = gnp.asarray(covparam0)
-
+                
+            param0 = gnp.concatenate((meanparam0, covparam0))
+                
             crit, dcrit = self.make_selection_criterion_with_gradient(
-                model["model"], xi_, zi_[:, i], model["pre_selection_criterion"]
+                model, xi_, zi_[:, i]
             )
 
-            covparam, info = gp.kernel.autoselect_parameters(
-                covparam0, crit, dcrit, silent=True, info=True
+            param, info = gp.kernel.autoselect_parameters(
+                param0, crit, dcrit, silent=True, info=True
             )
 
-            model["model"].covparam = gnp.asarray(covparam)
-
+            model["model"].meanparam = gnp.asarray(param[:mpl])
+            model["model"].covparam = gnp.asarray(param[mpl:])
             model["info"] = info
-
+            model["info"]["meanparam0"] = meanparam0
             model["info"]["covparam0"] = covparam0
-            model["info"]["covparam"] = covparam
+            model["info"]["param0"] = param0
+            model["info"]["meanparam"] = model["model"].meanparam
+            model["info"]["covparam"] = model["model"].covparam
+            model["info"]["param"] = param
             model["info"]["selection_criterion"] = crit
             model["info"]["time"] = time.time() - tic
 
@@ -475,13 +562,28 @@ class Model:
                 convert_in=False,
                 convert_out=False,
             )
-            zpsim_i = self.models[i]["model"].conditional_sample_paths(
-                zsim[:, :, i],
-                xtsim_xi_ind,
-                zi_[:, i],
-                xtsim_xt_ind,
-                lambda_t,
-            )
+            
+            if self.models[i]["model"].meantype == "linear_predictor":
+                zpsim_i = self.models[i]["model"].conditional_sample_paths(
+                    zsim[:, :, i],
+                    xtsim_xi_ind,
+                    zi_[:, i],
+                    xtsim_xt_ind,
+                    lambda_t,
+                )
+            elif self.models[i]["model"].meantype == "parameterized":
+                zpsim_i = self.models[i]["model"].conditional_sample_paths_parameterized_mean(
+                    zsim[:, :, i],
+                    xi_,
+                    xtsim_xi_ind,
+                    zi_[:, i],
+                    xt_,
+                    xtsim_xt_ind,
+                    lambda_t,
+                )
+            else:
+                raise ValueError(f"gpmp.core.Model.meantype {self.models[i]['model'].meantype} not implemented")
+    
             zpsim = gnp.set_col3(zpsim, i, zpsim_i)
 
         if self.output_dim == 1:
@@ -502,8 +604,89 @@ class Model:
 
         Returns
         -------
-        callable
-            The corresponding mean function.
+        (callable, int)
+            The corresponding mean function and the number of parameters.
+        """
+        raise NotImplementedError("This method should be implemented by subclasses")
+
+    def build_covariance(self, output_idx: int, **params):
+        """Create a covariance function
+
+        Parameters
+        ----------
+        output_idx : int
+            The index of the output for which the covariance function is being created.
+        **params : dict
+            Additional parameters for the covariance function
+
+        Returns
+        -------
+        function
+            A Matern covariance function.
+        """
+        raise NotImplementedError("This method should be implemented by subclasses")
+
+    def build_parameters_initial_guess_procedure(self, output_idx: int, **build_param):
+        """Build an initial guess procedure for anisotropic parameters.
+
+        Parameters
+        ----------
+        output_dim : int
+            Number of output dimensions for the model.
+
+        Returns
+        -------
+        function
+            A function to compute initial guesses for anisotropic parameters.
+        """
+        raise NotImplementedError("This method should be implemented by subclasses")
+
+    def build_selection_criterion(self, output_idx: int, **build_params):
+        raise NotImplementedError("This method should be implemented by subclasses")
+
+
+# ==============================================================================
+# ModelMaternpREML Class
+# ==============================================================================
+
+
+class Model_MaternpREML(Model):
+    def __init__(self, name, output_dim, mean=None, covariance_params=None):
+        """
+        Initialize a Model.
+
+        Parameters
+        ----------
+        name : str
+            The name of the model.
+        output_dim : int
+            The number of outputs for the model.
+        mean : str or list, optional
+            A default type of mean function to apply to outputs if mean_functions are not specified.
+        covariance_params : dict or list of dicts, optional
+            Parameters for each covariance function, including 'p'
+        """
+        super().__init__(
+            name,
+            output_dim,
+            parameterized_mean=False,
+            mean_names=mean,
+            covariance_params=covariance_params,
+        )
+
+    def build_mean_function(self, mean_name):
+        """
+        Build the mean function based on the mean type.
+
+        Parameters
+        ----------
+        mean_name : str
+            The type of mean function.
+
+        Returns
+        -------
+        (callable, int)
+            The corresponding mean function and number of parameters
 
         Raises
         ------
@@ -511,9 +694,9 @@ class Model:
             If the mean type is not implemented.
         """
         if mean_name == "constant":
-            return constant_mean
+            return (mean_linpred_constant, 0)
         elif mean_name == "linear":
-            return linear_mean
+            return (mean_linpred_linear, 0)
         else:
             raise NotImplementedError(f"Mean type {mean_name} not implemented")
 
@@ -556,21 +739,21 @@ class Model:
 
         def anisotropic_parameters_initial_guess(model, xi, zi):
             xi_ = gnp.asarray(xi)
-            zi_ = gnp.asarray(zi)
+            zi_ = gnp.asarray(zi).reshape(-1, 1)
             n = xi_.shape[0]
             d = xi_.shape[1]
 
             delta = gnp.max(xi_, axis=0) - gnp.min(xi_, axis=0)
             rho = gnp.exp(gnp.gammaln(d / 2 + 1) / d) / (gnp.pi**0.5) * delta
             covparam = gnp.concatenate((gnp.array([log(1.0)]), -gnp.log(rho)))
-            sigma2_GLS = 1.0 / n * model.norm_k_sqrd(xi_, zi_.reshape((-1,)), covparam)
+            sigma2_GLS = 1.0 / n * model.norm_k_sqrd(xi_, zi_, covparam)
 
-            return gnp.concatenate((gnp.array([gnp.log(sigma2_GLS)]), -gnp.log(rho)))
+            return gnp.concatenate((gnp.log(sigma2_GLS), -gnp.log(rho)))
 
         return anisotropic_parameters_initial_guess
 
     def build_selection_criterion(self, output_idx: int, **build_params):
-        def reml_criterion(covparam, model, xi, zi):
+        def reml_criterion(model, covparam, xi, zi):
             nlrel = model.negative_log_restricted_likelihood(covparam, xi, zi)
             return nlrel
 
@@ -578,13 +761,121 @@ class Model:
 
 
 # ==============================================================================
+# ModelMaternpML Class
+# ==============================================================================
+
+
+class Model_ConstantMeanMaternpML(Model):
+    """GP model with a constant mean and a Matern covariance function. Parameters are estimated by ML"""
+    def __init__(self, name, output_dim, covariance_params=None):
+        """
+        Initialize a Model.
+
+        Parameters
+        ----------
+        name : str
+            The name of the model.
+        output_dim : int
+            The number of outputs for the model.
+        covariance_params : dict or list of dicts, optional
+            Parameters for each covariance function, including 'p'
+        """
+        super().__init__(
+            name,
+            output_dim,
+            parameterized_mean=True,
+            mean_names="constant",
+            covariance_params=covariance_params,
+        )
+
+    def build_mean_function(self, mean_name):
+        """
+        Build the mean function based on the mean type.
+
+        Parameters
+        ----------
+        mean_name : str
+            The type of mean function.
+
+        Returns
+        -------
+        (callable, int)
+            The corresponding mean function and number of parameters
+
+        Raises
+        ------
+        NotImplementedError
+            If the mean type is not implemented.
+        """
+        if mean_name == "constant":
+            return (mean_parameterized_constant, 1)
+        else:
+            raise NotImplementedError(f"Mean type {mean_name} not implemented")
+
+    def build_covariance(self, output_idx: int, **params):
+        """Create a Matérn covariance function for a specific output index with given parameters.
+
+        Parameters
+        ----------
+        output_idx : int
+            The index of the output for which the covariance function is being created.
+        **params : dict
+            Additional parameters for the Matérn covariance function, including regularity 'p'.
+
+        Returns
+        -------
+        function
+            A Matern covariance function.
+        """
+        p = params.get("p", 2)  # Default value of p if not provided
+
+        def maternp_covariance(x, y, covparam, pairwise=False):
+            # Implementation of the Matérn covariance function using p and other parameters
+            return gp.kernel.maternp_covariance(x, y, p, covparam, pairwise)
+
+        return maternp_covariance
+
+    def build_parameters_initial_guess_procedure(self, output_idx: int, **build_param):
+        def anisotropic_parameters_initial_guess_constant_mean(model, xi, zi):
+            """Anisotropic initialization strategy with a parameterized constant mean."""
+            xi_ = gnp.asarray(xi)
+            zi_ = gnp.asarray(zi).reshape((-1, 1))  # Ensure zi_ is a column vector
+            n = xi_.shape[0]
+            d = xi_.shape[1]
+
+            delta = gnp.max(xi_, axis=0) - gnp.min(xi_, axis=0)
+            rho = gnp.exp(gnp.gammaln(d / 2 + 1) / d) / (gnp.pi**0.5) * delta
+
+            covparam = gnp.concatenate((gnp.array([gnp.log(1.0)]), -gnp.log(rho)))
+            zTKinvz, Kinv1, Kinvz = model.k_inverses(xi_, zi_, covparam)
+
+            mean_GLS = gnp.sum(Kinvz) / gnp.sum(Kinv1)
+            sigma2_GLS = (1.0 / n) * zTKinvz
+
+            return mean_GLS.reshape(1), gnp.concatenate((gnp.log(sigma2_GLS), -gnp.log(rho)))
+
+        return anisotropic_parameters_initial_guess_constant_mean
+
+    def build_selection_criterion(self, output_idx: int, **build_params):
+        def ml_criterion(model, meanparam, covparam, xi, zi):
+            nll = model.negative_log_likelihood(meanparam, covparam, xi, zi)
+            return nll
+
+        return ml_criterion
+
+
+# ==============================================================================
 # Mean Functions Section
 # ==============================================================================
-# This section includes the implementation of mean functions in GPmp
+# This section includes implementation of mean functions in GPmp
 
 
-def constant_mean(x, param):
-    """Constant mean function for Gaussian Process models with unknown mean.
+def mean_parameterized_constant(x, param):
+    return param * gnp.ones((x.shape[0], 1))
+
+
+def mean_linpred_constant(x, param):
+    """Constant mean function for Gaussian Process models, linear predictor type.
     Parameters
     ----------
     x : ndarray(n, d)
@@ -600,8 +891,8 @@ def constant_mean(x, param):
     return gnp.ones((x.shape[0], 1))
 
 
-def linear_mean(x, param):
-    """Linear mean function for Gaussian Process models with unknown mean.
+def mean_linpred_linear(x, param):
+    """Linear mean function for Gaussian Process models, linear predictor type.
     Parameters
     ----------
     x : ndarray(n, d)

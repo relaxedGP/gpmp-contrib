@@ -34,8 +34,8 @@ ind = [100, 1000, 1600]
 xi = xt[ind]
 
 ## -- initialize the ei algorithm
-model = gpc.Model(
-    "Simple function",
+model = gpc.Model_MaternpREML(
+    "GP1d",
     output_dim=problem.output_dim,
     mean="constant",
     covariance_params={"p": 2},

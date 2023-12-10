@@ -74,14 +74,22 @@ xt = gp.misc.designs.regulargrid(problem.input_dim, nt, problem.input_box)
 zt = problem(xt)
 
 ni = 3
-ind = [100, 1000, 1400, 1600]
+ind = [100, 1000, 1400, 1500, 1600]
 xi = xt[ind]
 zi = problem(xi)
 
 # Define the model, make predictions and draw conditional sample paths
-model = gpc.Model(
-    "1d_noisefree", problem.output_dim, mean="constant", covariance_params={"p": 4}
-)
+model_choice = 1
+
+if model_choice == 1:
+    model = gpc.Model_MaternpREML(
+        "1d_noisefree", problem.output_dim, mean="constant", covariance_params={"p": 4}
+    )
+elif model_choice == 2:
+    model = gpc.Model_ConstantMeanMaternpML(
+        "1d_noisefree", problem.output_dim, covariance_params={"p": 4}
+    )
+
 model.select_params(xi, zi)
 zpm, zpv = model.predict(xi, zi, xt)
 
@@ -120,11 +128,14 @@ xi = xt[ind]
 zi = zt[ind]
 
 # Define the model and make predictions
-model = gpc.Model(
+model = gpc.Model_MaternpREML(
     "2d_noisefree",
     pb.output_dim,
     mean="constant",
-    covariance_params=[{"p": 1}, {"p": 1}],  # alternative: covariance_params={"p": 1}
+    covariance_params=[
+        {"p": 1},
+        {"p": 1},
+    ],  # alternative form: covariance_params={"p": 1}
 )
 model.select_params(xi, zi)
 zpm, zpv = model.predict(xi, zi, xt)

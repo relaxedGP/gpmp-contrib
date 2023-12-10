@@ -42,7 +42,8 @@ def visualize_results(xt, zt, xi, zi, zpm, zpv, xnew=None):
     fig.plotdata(xi, zi)
     fig.plotgp(xt, zpm, zpv, colorscheme="simple")
     if xnew is not None:
-        fig.plot(np.repeat(xnew, 2), fig.ylim(), color="tab:gray", linewidth=2)
+        fig.plot(np.repeat(xnew, 2), fig.ylim(), color="tab:gray", linewidth=3)
+        fig.title("new evaluation")
     fig.xylabels("$x$", "$z$")
     fig.show(grid=True, xlim=[-1.0, 1.0], legend=True, legend_fontsize=9)
 
@@ -72,7 +73,7 @@ zi = problem(xi)
 # -- Create SequentialPrediction object --
 
 # Initialize SequentialPrediction with the initial dataset
-model = gpc.Model(
+model = gpc.Model_MaternpREML(
     "Simple function",
     output_dim=problem.output_dim,
     mean="constant",
