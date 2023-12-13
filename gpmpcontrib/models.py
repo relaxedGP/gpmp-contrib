@@ -27,11 +27,8 @@ class Model:
         name,
         output_dim,
         parameterized_mean,
-        mean_functions=None,
-        mean_paramlengths=None,
-        mean_names=None,
-        covariance_functions=None,
-        covariance_params=None,
+        mean_params,
+        covariance_params,
         initial_guess_procedures=None,
         selection_criteria=None,
     ):
@@ -45,21 +42,15 @@ class Model:
         output_dim : int
             The number of outputs for the model.
         parameterized_mean : bool
-            If True, the model uses a parameterized mean function. If False,
-            it uses a linear predictor mean function.
-        mean_functions : callable, list of callables, optional
-            A list of mean functions, one for each output. If not provided,
-            a default type is chosen based on the value of parameterized_mean.
-        mean_paramlengths : int or list, optional
-            Lengths of the mean parameter vector, to be used with mean_functions.
-            Specifies the number of parameters for the mean functions.
-        mean_names : str or list, optional
-            Names or identifiers for the mean functions. Used if mean_functions
-            are not explicitly provided.
-        covariance_functions : list of callables, optional
-            A list of covariance functions, one for each output.
-        covariance_params : dict or list of dicts, optional
-            Parameters for each covariance function, including 'p'
+            If True, the model uses a "parameterized" mean function. If False,
+            it uses a "linear predictor" mean function.
+        mean_params : list of dict or dict
+            Parameters for defining mean functions. Can be a single dictionary applied to
+            all outputs or a list of dictionaries, one for each output. Each dictionary includes:
+            - 'function': The mean function to be used, either a callable or a string.
+            - 'param_length': The length of the mean function's parameter vector, required if 'function' is a callable.
+        covariance_params : dict or list of dicts
+            Parameters for defining covariance functions. Each dictionary must include a key 'function'.
         initial_guess_procedures : list of callables, optional
             A list of procedures for initial guess of model parameters, one for each output.
         selection_criteria : list of callables, optional
@@ -73,12 +64,11 @@ class Model:
             mean_type = "parameterized"
         else:
             mean_type = "linear_predictor"
+
         self.mean_functions, self.mean_functions_info = self.set_mean_functions(
-            mean_functions, mean_paramlengths, mean_names
+            mean_params
         )
-        self.covariance_functions = self.set_covariance_functions(
-            covariance_functions, build_params=covariance_params
-        )
+        self.covariance_functions = self.set_covariance_functions(covariance_params)
 
         # Initialize the models
         self.models = []
@@ -161,135 +151,111 @@ class Model:
 
         return model_info
 
-    def set_mean_functions(
-        self,
-        mean_functions=None,
-        mean_paramlengths=None,
-        mean_names=None,
-        build_params=None,
-    ):
-        """
-        Set mean functions.
+    def set_mean_functions(self, mean_params):
+        """Set mean functions.
 
-        This function uses provided mean_functions or calls the method
-        self.build_mean_function with mean_names and build_params.
+        This function sets mean functions based on the parameters
+        provided in mean_params.  Each entry in mean_params should
+        specify a mean function and its associated parameters.
 
         Parameters
         ----------
-        mean_functions : list or callable
-            The mean functions to be used. Can be a single callable applied to all outputs
-            or a list of callables, one for each output.
-        mean_paramlengths : int, list of int, optional
-            Lengths of the mean parameter vector, to be used with mean_functions.
-            Specifies the number of parameters for the mean functions.
-        mean_names : str or list
-            Type of mean function to use. Can be "constant", "linear"... or a list of such strings.
-        build_params : None
-            Unused
+        mean_params : list of dict or dict
+            Parameters for defining mean functions. Can be a single
+            dictionary applied to all outputs or a list of
+            dictionaries, one for each output. Dictionary may include:
+            - 'function': A callable mean function to be used
+            - 'param_length': The length of the mean function's
+              parameter vector, required if 'function' is given and is
+              a callable.
 
         Returns
         -------
         tuple of list, list
-            A tuple containing a list of mean function callables and a list of their names.
+            A tuple containing a list of mean function callables and a
+            list of their descriptions.
 
         Raises
         ------
         ValueError
-            If mean_functions or mean_types are not correctly specified.
-        NotImplementedError
-            If a specified mean_type is not implemented.
+            If mean_params are not correctly specified or do not match
+            output_dim.
 
         """
-        if mean_functions is not None:
-            if isinstance(mean_paramlength, int):
-                mean_paramlengths = [mean_paramlengths] * self.output_dim
-            elif (
-                isinstance(mean_paramlengths, list)
-                and len(mean_paramlengths) == self.output_dim
-            ):
-                pass
+        if isinstance(mean_params, dict):
+            mean_params = [mean_params] * self.output_dim
+        elif not isinstance(mean_params, list) or len(mean_params) != self.output_dim:
+            raise ValueError(
+                "mean_params must be a dict or a list of dicts of length output_dim"
+            )
+
+        mean_functions = []
+        mean_functions_info = []
+
+        for i, param in enumerate(mean_params):
+            if "function" in param and callable(param["function"]):
+                mean_function = param["function"]
+                if "param_length" not in param:
+                    raise ValueError(
+                        "'param_length' key is required for callable mean functions in mean_params"
+                    )
+                param_length = param["param_length"]
             else:
-                raise ValueError(
-                    "mean_paramlengths must be an int or a list of length output_dim"
-                )
-            if callable(mean_functions):
-                mean_functions = [mean_functions for _ in range(self.output_dim)]
-                mean_functions_info = [
-                    {"description": "custom_function", "param_length": param_length}
-                    for param_length in mean_paramlengths
-                ]
-            elif (
-                isinstance(mean_functions, list)
-                and len(mean_functions) == self.output_dim
-            ):
-                mean_functions_info = [
-                    {
-                        "description": "custom_function",
-                        "param_length": mean_paramlengths[i],
-                    }
-                    for i in range(self.output_dim)
-                ]
-            else:
-                raise ValueError(
-                    "mean_functions must be a callable or a list of length output_dim"
-                )
-        elif isinstance(mean_names, list) and len(mean_names) == self.output_dim:
-            mean_functions = []
-            mean_functions_info = []
-            for mn in mean_names:
-                func, param_length = self.build_mean_function(mn)
-                mean_functions.append(func)
-                mean_functions_info.append(
-                    {"description": mn, "param_length": param_length}
-                )
-        elif isinstance(mean_names, str):
-            mean_functions = []
-            mean_functions_info = []
-            for _ in range(self.output_dim):
-                func, param_length = self.build_mean_function(mean_names)
-                mean_functions.append(func)
-                mean_functions_info.append(
-                    {"description": mean_names, "param_length": param_length}
-                )
-        else:
-            raise ValueError("Specify mean_functions or mean_names")
+                mean_function, param_length = self.build_mean_function(i, param)
+
+            mean_functions.append(mean_function)
+            mean_functions_info.append(
+                {"description": mean_function.__name__, "param_length": param_length}
+            )
 
         return mean_functions, mean_functions_info
 
-    def set_covariance_functions(self, covariance_functions=None, build_params=None):
-        """Set covariance functions
+    def set_covariance_functions(self, covariance_params):
+        """Set covariance functions.
 
-        This method uses provided covariance_functions or calls the method self.build_covariance
+        This method sets covariance functions based on the parameters
+        provided in params. Each entry in params should specify a
+        covariance function and its associated parameters.
 
         Parameters
         ----------
-        covariance_functions : list or callable, optional
-            The covariance functions to be used.
-        build_params : dict or list of dicts
-            Parameters for each covariance function, including 'p'.
+        covarariance_params : list of dict or dict
+            Parameters for defining covariance functions. Can be a
+            single dictionary applied to all outputs or a list of
+            dictionaries, one for each output. Each dictionary may
+            have a 'function' key providing a callable covariance
+            function.
 
         Returns
         -------
         list
             A list of covariance function callables.
+
+        Raises
+        ------
+        ValueError
+            If params are not correctly specified or do not
+            match output_dim.
         """
-        if not isinstance(build_params, list):
-            build_params = [build_params] * self.output_dim
-
-        if len(build_params) != self.output_dim:
-            raise ValueError("Length of params must match output_dim")
-
-        if covariance_functions is None:
-            covariance_functions = []
-            for i, param in enumerate(build_params):
-                covariance_functions.append(self.build_covariance(i, **(param or {})))
-
-        # If covariance_functions is already provided, validate its length
+        if isinstance(covariance_params, dict):
+            covariance_params = [covariance_params] * self.output_dim
         elif (
-            isinstance(covariance_functions, list)
-            and len(covariance_functions) != self.output_dim
+            not isinstance(covariance_params, list)
+            or len(covariance_params) != self.output_dim
         ):
-            raise ValueError("covariance_functions must be a list of length output_dim")
+            raise ValueError(
+                "params must be a dict or a list of dicts of length output_dim"
+            )
+
+        covariance_functions = []
+
+        for i, param in enumerate(covariance_params):
+            if "function" in param and callable(param["function"]):
+                covariance_function = param["function"]
+            else:
+                covariance_function = self.build_covariance(i, param)
+
+            covariance_functions.append(covariance_function)
 
         return covariance_functions
 
@@ -391,7 +357,9 @@ class Model:
             def crit_(param):
                 meanparam = param[:mean_paramlength]
                 covparam = param[mean_paramlength:]
-                l = pre_selection_criterion(model["model"], meanparam, covparam, xi_, zi_)
+                l = pre_selection_criterion(
+                    model["model"], meanparam, covparam, xi_, zi_
+                )
                 return l
 
         else:
@@ -426,15 +394,15 @@ class Model:
                         model["model"], xi_, zi_[:, i]
                     )
                 else:
-                    (meanparam0, covparam0) = model["parameters_initial_guess_procedure"](
-                        model["model"], xi_, zi_[:, i]
-                    )
+                    (meanparam0, covparam0) = model[
+                        "parameters_initial_guess_procedure"
+                    ](model["model"], xi_, zi_[:, i])
             else:
                 meanparam0 = model["model"].meanparam
                 covparam0 = model["model"].covparam
-                
+
             param0 = gnp.concatenate((meanparam0, covparam0))
-                
+
             crit, dcrit = self.make_selection_criterion_with_gradient(
                 model, xi_, zi_[:, i]
             )
@@ -562,7 +530,7 @@ class Model:
                 convert_in=False,
                 convert_out=False,
             )
-            
+
             if self.models[i]["model"].meantype == "linear_predictor":
                 zpsim_i = self.models[i]["model"].conditional_sample_paths(
                     zsim[:, :, i],
@@ -572,7 +540,9 @@ class Model:
                     lambda_t,
                 )
             elif self.models[i]["model"].meantype == "parameterized":
-                zpsim_i = self.models[i]["model"].conditional_sample_paths_parameterized_mean(
+                zpsim_i = self.models[i][
+                    "model"
+                ].conditional_sample_paths_parameterized_mean(
                     zsim[:, :, i],
                     xi_,
                     xtsim_xi_ind,
@@ -582,8 +552,10 @@ class Model:
                     lambda_t,
                 )
             else:
-                raise ValueError(f"gpmp.core.Model.meantype {self.models[i]['model'].meantype} not implemented")
-    
+                raise ValueError(
+                    f"gpmp.core.Model.meantype {self.models[i]['model'].meantype} not implemented"
+                )
+
             zpsim = gnp.set_col3(zpsim, i, zpsim_i)
 
         if self.output_dim == 1:
@@ -593,36 +565,41 @@ class Model:
         # r = {"xtsim": xtsim, "xtsim_xi_ind": xtsim_xi_ind, "xtsim_xt_ind": xtsim_xt_ind, "zsim": zsim}
         return zpsim
 
-    def build_mean_function(self, mean_name):
-        """
-        Build the mean function based on the mean type.
+    def build_mean_function(self, output_idx: int, param: dict):
+        """Build a mean function
 
         Parameters
         ----------
-        mean_name : str
-            The type of mean function.
+        output_idx : int
+            The index of the output for which the covariance function
+            is being created.
+        param : dict
+            Additional parameters for the mean function
 
         Returns
         -------
         (callable, int)
             The corresponding mean function and the number of parameters.
+
         """
         raise NotImplementedError("This method should be implemented by subclasses")
 
-    def build_covariance(self, output_idx: int, **params):
+    def build_covariance(self, output_idx: int, param: dict):
         """Create a covariance function
 
         Parameters
         ----------
         output_idx : int
-            The index of the output for which the covariance function is being created.
-        **params : dict
+            The index of the output for which the covariance function
+            is being created.
+        param : dict
             Additional parameters for the covariance function
 
         Returns
         -------
-        function
-            A Matern covariance function.
+        callable
+            A covariance function.
+
         """
         raise NotImplementedError("This method should be implemented by subclasses")
 
@@ -651,7 +628,7 @@ class Model:
 
 
 class Model_MaternpREML(Model):
-    def __init__(self, name, output_dim, mean=None, covariance_params=None):
+    def __init__(self, name, output_dim, mean_params, covariance_params):
         """
         Initialize a Model.
 
@@ -661,27 +638,29 @@ class Model_MaternpREML(Model):
             The name of the model.
         output_dim : int
             The number of outputs for the model.
-        mean : str or list, optional
-            A default type of mean function to apply to outputs if mean_functions are not specified.
-        covariance_params : dict or list of dicts, optional
+        mean_params : dict or list of dicts
+            Type of mean function to use.
+        covariance_params : dict or list of dicts
             Parameters for each covariance function, including 'p'
         """
         super().__init__(
             name,
             output_dim,
             parameterized_mean=False,
-            mean_names=mean,
+            mean_params=mean_params,
             covariance_params=covariance_params,
         )
 
-    def build_mean_function(self, mean_name):
-        """
-        Build the mean function based on the mean type.
+    def build_mean_function(self, output_idx: int, param: dict):
+        """Build the mean function based on the mean type.
 
         Parameters
         ----------
-        mean_name : str
-            The type of mean function.
+        output_idx : int
+            The index of the output for which the mean function
+            is being created.
+        param : dict
+            Must contain a "type" key with value "constant" or "linear".
 
         Returns
         -------
@@ -692,30 +671,44 @@ class Model_MaternpREML(Model):
         ------
         NotImplementedError
             If the mean type is not implemented.
+
         """
-        if mean_name == "constant":
+        if "type" not in param:
+            raise ValueError(f"Mean 'type' should be specified in 'param'")
+
+        if param["type"] == "constant":
             return (mean_linpred_constant, 0)
-        elif mean_name == "linear":
+        elif param["type"] == "linear":
             return (mean_linpred_linear, 0)
         else:
-            raise NotImplementedError(f"Mean type {mean_name} not implemented")
+            raise NotImplementedError(f"Mean type {param['type']} not implemented")
 
-    def build_covariance(self, output_idx: int, **params):
-        """Create a Matérn covariance function for a specific output index with given parameters.
+    def build_covariance(self, output_idx: int, param: dict):
+        """Create a Matérn covariance function for a specific output
+        index with given parameters.
 
         Parameters
         ----------
         output_idx : int
-            The index of the output for which the covariance function is being created.
-        **params : dict
-            Additional parameters for the Matérn covariance function, including regularity 'p'.
+            The index of the output for which the covariance function
+            is being created.
+        param : dict
+            Additional parameters for the Matérn covariance function,
+            including regularity 'p'.
 
         Returns
         -------
         function
             A Matern covariance function.
+
         """
-        p = params.get("p", 2)  # Default value of p if not provided
+        if ("p" not in param) or (not isinstance(param["p"], int)):
+            raise ValueError(
+                f"Regularity 'p' should be integer and specified in 'param'"
+            )
+
+        p = param["p"]
+        # FIXME: p = params.get("p", 2)  # Default value of p if not provided
 
         def maternp_covariance(x, y, covparam, pairwise=False):
             # Implementation of the Matérn covariance function using p and other parameters
@@ -767,6 +760,7 @@ class Model_MaternpREML(Model):
 
 class Model_ConstantMeanMaternpML(Model):
     """GP model with a constant mean and a Matern covariance function. Parameters are estimated by ML"""
+
     def __init__(self, name, output_dim, covariance_params=None):
         """
         Initialize a Model.
@@ -784,18 +778,20 @@ class Model_ConstantMeanMaternpML(Model):
             name,
             output_dim,
             parameterized_mean=True,
-            mean_names="constant",
+            mean_params={"type": "constant"},
             covariance_params=covariance_params,
         )
 
-    def build_mean_function(self, mean_name):
-        """
-        Build the mean function based on the mean type.
+    def build_mean_function(self, output_idx: int, param: dict):
+        """Build the mean function based on the mean type.
 
         Parameters
         ----------
-        mean_name : str
-            The type of mean function.
+        output_idx : int
+            The index of the output for which the covariance function
+            is being created.
+        param : dict
+            Must contain a "type" key with value "constant".
 
         Returns
         -------
@@ -806,28 +802,41 @@ class Model_ConstantMeanMaternpML(Model):
         ------
         NotImplementedError
             If the mean type is not implemented.
+
         """
-        if mean_name == "constant":
+        if "type" not in param:
+            raise ValueError(f"Mean 'type' should be specified in 'param'")
+
+        if param["type"] == "constant":
             return (mean_parameterized_constant, 1)
         else:
-            raise NotImplementedError(f"Mean type {mean_name} not implemented")
+            raise NotImplementedError(f"Mean type {mean_params} not implemented")
 
-    def build_covariance(self, output_idx: int, **params):
-        """Create a Matérn covariance function for a specific output index with given parameters.
+    def build_covariance(self, output_idx: int, param: dict):
+        """Create a Matérn covariance function for a specific output
+        index with given parameters.
 
         Parameters
         ----------
         output_idx : int
-            The index of the output for which the covariance function is being created.
-        **params : dict
-            Additional parameters for the Matérn covariance function, including regularity 'p'.
+            The index of the output for which the covariance function
+            is being created.
+        params : dict
+            Additional parameters for the Matérn covariance function,
+            including regularity 'p'.
 
         Returns
         -------
         function
             A Matern covariance function.
+
         """
-        p = params.get("p", 2)  # Default value of p if not provided
+        if ("p" not in param) or (not isinstance(param["p"], int)):
+            raise ValueError(
+                f"Regularity 'p' should be integer and specified in 'param'"
+            )
+
+        p = param["p"]
 
         def maternp_covariance(x, y, covparam, pairwise=False):
             # Implementation of the Matérn covariance function using p and other parameters
@@ -852,7 +861,9 @@ class Model_ConstantMeanMaternpML(Model):
             mean_GLS = gnp.sum(Kinvz) / gnp.sum(Kinv1)
             sigma2_GLS = (1.0 / n) * zTKinvz
 
-            return mean_GLS.reshape(1), gnp.concatenate((gnp.log(sigma2_GLS), -gnp.log(rho)))
+            return mean_GLS.reshape(1), gnp.concatenate(
+                (gnp.log(sigma2_GLS), -gnp.log(rho))
+            )
 
         return anisotropic_parameters_initial_guess_constant_mean
 

@@ -79,15 +79,20 @@ xi = xt[ind]
 zi = problem(xi)
 
 # Define the model, make predictions and draw conditional sample paths
-model_choice = 1
+model_choice = 2
 
 if model_choice == 1:
     model = gpc.Model_MaternpREML(
-        "1d_noisefree", problem.output_dim, mean="constant", covariance_params={"p": 4}
+        "1d_noisefree",
+        problem.output_dim,
+        mean_params={"type": "constant"},
+        covariance_params={"p": 4.1},
     )
 elif model_choice == 2:
     model = gpc.Model_ConstantMeanMaternpML(
-        "1d_noisefree", problem.output_dim, covariance_params={"p": 4}
+        "1d_noisefree",
+        problem.output_dim,
+        covariance_params={"p": 4}
     )
 
 model.select_params(xi, zi)
@@ -131,7 +136,7 @@ zi = zt[ind]
 model = gpc.Model_MaternpREML(
     "2d_noisefree",
     pb.output_dim,
-    mean="constant",
+    mean_params={"type": "constant"},
     covariance_params=[
         {"p": 1},
         {"p": 1},

@@ -76,7 +76,7 @@ zi = problem(xi)
 model = gpc.Model_MaternpREML(
     "Simple function",
     output_dim=problem.output_dim,
-    mean="constant",
+    mean_params={"type": "constant"},
     covariance_params={"p": 2},
 )
 spred = gpc.SequentialPrediction(model)

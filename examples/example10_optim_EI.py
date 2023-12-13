@@ -37,7 +37,7 @@ xi = xt[ind]
 model = gpc.Model_MaternpREML(
     "GP1d",
     output_dim=problem.output_dim,
-    mean="constant",
+    mean_params={"type": "constant"},
     covariance_params={"p": 2},
 )
 
