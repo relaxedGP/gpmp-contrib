@@ -96,10 +96,10 @@ class ExpectedImprovement(SequentialPrediction):
 
     def step(self):
         # evaluate ei on the search space
-        zpm, zpv = self.predict(self.smc.x, convert_out=False)
+        zpm, zpv = self.predict(self.smc.particles.x, convert_out=False)
         self.ei = sampcrit.expected_improvement(-self.minimum, -zpm, zpv)
     
         # make new evaluation
-        x_new = self.smc.x[gnp.argmax(gnp.asarray(self.ei))].reshape(1, -1)
+        x_new = self.smc.particles.x[gnp.argmax(gnp.asarray(self.ei))].reshape(1, -1)
 
         self.make_new_eval(x_new)

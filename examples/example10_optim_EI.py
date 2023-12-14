@@ -67,7 +67,7 @@ def plot(show=True, x=None, z=None):
     fig.ylabel("EI")
     fig.subplot(3)
     fig.plot(xt, pe, "k", linewidth=0.5)
-    fig.plot(eialgo.smc.x, np.zeros(eialgo.smc.n), ".")
+    fig.plot(eialgo.smc.particles.x, np.zeros(eialgo.smc.n), ".")
     fig.ylabel("Prob. excursion")
     fig.xlabel("x")
     if show:
