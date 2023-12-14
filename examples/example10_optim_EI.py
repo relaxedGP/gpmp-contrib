@@ -67,7 +67,8 @@ def plot(show=True, x=None, z=None):
     fig.ylabel("EI")
     fig.subplot(3)
     fig.plot(xt, pe, "k", linewidth=0.5)
-    fig.plot(eialgo.smc.particles.x, np.zeros(eialgo.smc.n), ".")
+    # fig.plot(eialgo.smc.particles.x, np.zeros(eialgo.smc.n), ".")
+    fig.plot(eialgo.smc.particles.x, gnp.exp(eialgo.smc.particles.logpx), ".")
     fig.ylabel("Prob. excursion")
     fig.xlabel("x")
     if show:
@@ -78,13 +79,15 @@ def plot(show=True, x=None, z=None):
 
 plot()
 
-# make n = 3 new evaluations
-n = 5
+# make n new evaluations
+n = 8
 for i in range(n):
+    print(f"Iteration {i} / {n}")
     eialgo.step()
     plot(show=True)
+    # print model diagnosis
+    gp.misc.modeldiagnosis.diag(
+        eialgo.models[0]["model"], eialgo.models[0]["info"], eialgo.xi, eialgo.zi
+    )
 
-# print model diagnosis
-gp.misc.modeldiagnosis.diag(
-    eialgo.models[0]["model"], eialgo.models[0]["info"], eialgo.xi, eialgo.zi
-)
+eialgo.smc.plot_state()
