@@ -32,6 +32,8 @@ class ExpectedImprovement(SequentialPrediction):
 
     def set_options(self, options):
         default_options = {"n_smc": 1000}
+        default_options.update(options or {})
+        
         return default_options
 
     def init_smc(self, n_smc):
@@ -64,7 +66,7 @@ class ExpectedImprovement(SequentialPrediction):
     def update_search_space(self):
         method = 3
         if method == 1:
-            self.smc.step_simple(
+            self.smc.step(
                 logpdf_parameterized_function=self.log_prob_excursion,
                 u_target=-self.current_minimum,
             )

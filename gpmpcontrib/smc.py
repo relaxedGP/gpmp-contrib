@@ -38,10 +38,6 @@ class ParticlesSet:
         Function to compute the log-probability density.
     param_s : float
         Scaling parameter for the perturbation step.
-    original_x : ndarray or None
-        Original positions of the particles before the last move.
-    original_logpx : ndarray or None
-        Original log-probabilities of the particles before the last move.
 
     Methods
     -------
@@ -58,9 +54,7 @@ class ParticlesSet:
     perturb()
         Perturb the particles by adding random noise.
     move()
-        Perform a Metropolis-Hastings step and compute the acceptance rate.
-    cancel_move()
-        Cancel the last move and revert the particles to their original state.
+        Perform a Metropolis-Hastings step and compute the acceptation rate.
 
     """
 
@@ -80,8 +74,6 @@ class ParticlesSet:
         self.particles_init(box, n)
 
         # Metropolis-Hastings ingredients
-        self.original_x = None  # Store the original positions
-        self.original_logpx = None  # Store the original log probabilities
         self.param_s = 0.05  # Default scaling parameter for perturbation
 
     def particles_init(self, box, n, method="randunif"):
@@ -166,25 +158,21 @@ class ParticlesSet:
 
     def move(self):
         """
-        Perform a Metropolis-Hastings step and compute the acceptance rate.
+        Perform a Metropolis-Hastings step and compute the acceptation rate.
 
-        This method perturbs the particles, computes the acceptance probabilities, and
+        This method perturbs the particles, computes the acceptation probabilities, and
         decides whether to move the particles to their new positions.
 
         Returns
         -------
         float
-            Acceptance rate of the move.
+            Acceptation rate of the move.
         """
-        # Store the original state to allow for canceling the move
-        self.original_x = gnp.copy(self.x)
-        self.original_logpx = gnp.copy(self.logpx)
-
         # Perturb the particles
         y = self.perturb()
         logpy = self.logpdf_function(y)
 
-        # Compute acceptance probabilities
+        # Compute acceptation probabilities
         rho = gnp.minimum(1, gnp.exp(logpy - self.logpx))
 
         accepted_moves = 0  # Counter for accepted moves
@@ -195,21 +183,10 @@ class ParticlesSet:
                 self.logpx = gnp.set_elem1(self.logpx, i, logpy[i])
                 accepted_moves += 1
 
-        # Compute the acceptance rate
-        acceptance_rate = accepted_moves / self.n
+        # Compute the acceptation rate
+        acceptation_rate = accepted_moves / self.n
 
-        return acceptance_rate
-
-    def cancel_move(self):
-        """
-        Cancel the last move and revert the particles to their original state.
-        """
-        if self.original_x is not None and self.original_logpx is not None:
-            # Revert to the original state before the last move
-            self.x = self.original_x
-            self.logpx = self.original_logpx
-        else:
-            raise RuntimeError("No move to cancel or original state not stored")
+        return acceptation_rate
 
 
 class SMC:
@@ -241,8 +218,8 @@ class SMC:
     -------
     step(logpdf_parameterized_function, u_target)
         Perform a single SMC step.
-    move_with_controlled_acceptance_rate()
-        Adjust the particles' movement to control the acceptance rate.
+    move_with_controlled_acceptation_rate()
+        Adjust the particles' movement to control the acceptation rate.
 
     """
 
@@ -257,8 +234,8 @@ class SMC:
         # Dictionary to hold MH algorithm parameters
         self.mh_params = {
             "mh_steps": 5,
-            "acceptance_rate_min": 0.4,
-            "acceptance_rate_max": 0.6,
+            "acceptation_rate_min": 0.4,
+            "acceptation_rate_max": 0.6,
             "adjustment_factor": 1.4,
             "adjustment_max_iterations": 50,
         }
@@ -273,7 +250,7 @@ class SMC:
         self.logging_threshold_sequence = []  # Sequence of thresholds in restart
         self.logging_acceptation_rate_sequence = []
 
-    def step_simple(self, logpdf_parameterized_function, u_target):
+    def step(self, logpdf_parameterized_function, u_target):
         """
         Perform a single step of the SMC process.
 
@@ -296,10 +273,11 @@ class SMC:
 
         # Resample / move
         self.particles.resample()
-        self.move_with_controlled_acceptance_rate()
-        if self.mh_params["mh_steps"] > 1:
-            acceptance_rate = self.particles.move()
-            self.logging_acceptation_rate_sequence.append(acceptance_rate)
+        self.move_with_controlled_acceptation_rate()
+        for _ in range(self.mh_params["mh_steps"] - 1):
+            # Additional moves if required
+            acceptation_rate = self.particles.move()
+            self.logging_acceptation_rate_sequence.append(acceptation_rate)
 
         # Logging
         self.logging_current_threshold = u_target
@@ -373,10 +351,11 @@ class SMC:
         else:
             # resample / move
             self.particles.resample()
-            self.move_with_controlled_acceptance_rate()
-            if self.mh_params["mh_steps"] > 1:
-                acceptance_rate = self.particles.move()
-                self.logging_acceptation_rate_sequence.append(acceptance_rate)
+            self.move_with_controlled_acceptation_rate()
+            for _ in range(self.mh_params["mh_steps"] - 1):
+                # Additional moves if required
+                acceptation_rate = self.particles.move()
+                self.logging_acceptation_rate_sequence.append(acceptation_rate)
             # Logging
             self.log_state()
 
@@ -425,7 +404,7 @@ class SMC:
             self.logging_restart_iteration += 1
             self.logging_threshold_sequence.append(next_threshold)
 
-            self.step_simple(logpdf_parameterized_function, next_threshold)
+            self.step(logpdf_parameterized_function, next_threshold)
 
             current_threshold = next_threshold
 
@@ -433,11 +412,11 @@ class SMC:
         self.logging_threshold_sequence = []
         self.logging_restart_iteration = 0
 
-    def move_with_controlled_acceptance_rate(self, debug=False):
+    def move_with_controlled_acceptation_rate(self, debug=False):
         """
-        Adjust the particles' movement to maintain the acceptance
+        Adjust the particles' movement to maintain the acceptation
         rate within specified bounds.  This method dynamically adjusts
-        the scaling parameter based on the acceptance rate to ensure
+        the scaling parameter based on the acceptation rate to ensure
         efficient exploration of the state space.
 
         """
@@ -446,21 +425,19 @@ class SMC:
         while iteration_counter < self.mh_params["adjustment_max_iterations"]:
             iteration_counter += 1
 
-            acceptance_rate = self.particles.move()
+            acceptation_rate = self.particles.move()
 
             # Logging
-            self.logging_acceptation_rate_sequence.append(acceptance_rate)
+            self.logging_acceptation_rate_sequence.append(acceptation_rate)
 
             if debug:
-                print(f"Acceptance rate = {acceptance_rate}")
+                print(f"Acceptation rate = {acceptation_rate}")
 
-            if acceptance_rate < self.mh_params["acceptance_rate_min"]:
-                self.particles.cancel_move()
+            if acceptation_rate < self.mh_params["acceptation_rate_min"]:
                 self.particles.param_s /= self.mh_params["adjustment_factor"]
                 continue
 
-            if acceptance_rate > self.mh_params["acceptance_rate_max"]:
-                self.particles.cancel_move()
+            if acceptation_rate > self.mh_params["acceptation_rate_max"]:
                 self.particles.param_s *= self.mh_params["adjustment_factor"]
                 continue
 
@@ -596,7 +573,7 @@ class SMC:
         """Plot the state of the SMC process over different stages.
 
         It includes visualizations of thresholds, effective sample
-        size (ESS), and acceptance rates.
+        size (ESS), and acceptation rates.
         """
 
         import matplotlib.pyplot as plt
@@ -616,7 +593,7 @@ class SMC:
         target_thresholds = []
         current_thresholds = []
         ess_values = []
-        acceptance_rates = []
+        acceptation_rates = []
         stage_changes = []  # To mark the stages where change occurs
 
         # Extracting and replicating data according to the length of 'acceptation_rate_sequence' in each log entry
@@ -630,7 +607,7 @@ class SMC:
             target_thresholds.extend([entry["target_threshold"]] * ar_length)
             current_thresholds.extend([entry["current_threshold"]] * ar_length)
             ess_values.extend([entry["ess"]] * ar_length)
-            acceptance_rates.extend(entry["acceptation_rate_sequence"])
+            acceptation_rates.extend(entry["acceptation_rate_sequence"])
 
         # Plotting
         fig, ax1 = plt.subplots()
@@ -678,9 +655,9 @@ class SMC:
         ax3 = ax1.twinx()
         ax3.spines["right"].set_position(("outward", 60))
         color = "tab:green"
-        ax3.set_ylabel("Acceptance Rate", color=color)
+        ax3.set_ylabel("Acceptation Rate", color=color)
         ax3.plot(
-            acceptance_rates, label="Acceptance Rate", color=color, linestyle="dotted"
+            acceptation_rates, label="Acceptation Rate", color=color, linestyle="dotted"
         )
         ax3.set_ylim(0.0, 1.0)
         ax3.tick_params(axis="y", labelcolor=color)

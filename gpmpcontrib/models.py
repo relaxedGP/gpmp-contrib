@@ -810,7 +810,7 @@ class Model_ConstantMeanMaternpML(Model):
         if param["type"] == "constant":
             return (mean_parameterized_constant, 1)
         else:
-            raise NotImplementedError(f"Mean type {mean_params} not implemented")
+            raise NotImplementedError(f"Mean type {param['type']} not implemented")
 
     def build_covariance(self, output_idx: int, param: dict):
         """Create a Matérn covariance function for a specific output
