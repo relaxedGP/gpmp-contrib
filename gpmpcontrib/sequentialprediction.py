@@ -24,6 +24,7 @@ import gpmp.num as gnp
 import gpmp as gp
 from gpmpcontrib.models import Model
 
+
 class SequentialPrediction:
     def __init__(self, model):
         if not isinstance(model, Model):
@@ -51,7 +52,7 @@ class SequentialPrediction:
     @property
     def output_dim(self):
         return self.model.output_dim
-    
+
     def set_data(self, xi, zi):
         self.xi = gnp.asarray(xi)
         self.zi = gnp.asarray(zi).reshape(zi.shape[0], -1)  # Ensure zi is a matrix
@@ -72,7 +73,14 @@ class SequentialPrediction:
 
     def update_params(self):
         if self.xi is not None and self.zi is not None:
-            self.model.select_params(self.xi, self.zi, force_param_initial_guess=self.force_param_initial_guess)
+            try:
+                self.model.select_params(
+                    self.xi,
+                    self.zi,
+                    force_param_initial_guess=self.force_param_initial_guess,
+                )
+            except:
+                raise RuntimeError("Failed to update parameters")
 
     def predict(self, xt, convert_out=True):
         if self.zi.ndim == 1:
@@ -83,6 +91,7 @@ class SequentialPrediction:
         if self.zi.ndim == 1:
             self.zi = self.zi.reshape(-1, 1)
         return self.model.compute_conditional_simulations(self.xi, self.zi, xt)
+
 
 # class SequentialPrediction:
 #     """A class for managing and using Gaussian Process (GP) models for
@@ -254,7 +263,7 @@ class SequentialPrediction:
 #             self.models[i]["selection_criterion"], self.xi, self.zi[:, i]
 #         )
 #         return crit, dcrit
-        
+
 #     def update_params(self):
 #         """Parameter selection"""
 
