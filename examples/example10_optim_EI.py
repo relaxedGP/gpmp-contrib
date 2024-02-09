@@ -33,7 +33,7 @@ ni = 3
 ind = [100, 1000, 1600]
 xi = xt[ind]
 
-## -- initialize the ei algorithm
+## -- initialize a model and the ei algorithm
 model = gpc.Model_MaternpREML(
     "GP1d",
     output_dim=problem.output_dim,

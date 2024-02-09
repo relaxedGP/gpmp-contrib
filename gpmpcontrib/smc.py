@@ -83,7 +83,6 @@ class ParticlesSet:
         # Metropolis-Hastings ingredients
         self.param_s = 0.05  # Default scaling parameter for perturbation
 
-
     def particles_init(self, box, n, method="randunif"):
         """Initialize particles within the given box.
 
@@ -105,14 +104,19 @@ class ParticlesSet:
             weights of the initialized particles.
 
         """
-        assert(self.dim == len(box[0]), "Box dimension do not match particle dimension.")
+        assert (
+            self.dim == len(box[0]),
+            "Box dimension do not match particle dimension.",
+        )
         self.n = n
 
         # Initialize positions
         if method == "randunif":
             self.x = ParticlesSet.randunif(self.dim, self.n, box, self.rng)
         else:
-            raise NotImplementedError(f"The method '{method}' is not supported. Currently, only 'randunif' is available.")
+            raise NotImplementedError(
+                f"The method '{method}' is not supported. Currently, only 'randunif' is available."
+            )
 
         # Initialize log-probabilities and weights
         self.logpx = gnp.zeros((n,))
@@ -204,18 +208,21 @@ class ParticlesSet:
     @staticmethod
     def rand(rng):
         return rng.uniform()
-    
+
     @staticmethod
     def multinomial_rvs(n, p, rng):
         return gnp.asarray(stats.multinomial.rvs(n=n, p=p, random_state=rng))
 
     @staticmethod
     def multivariate_normal_rvs(C, n, rng):
-        return gnp.asarray(stats.multivariate_normal.rvs(cov=C, size=n, random_state=rng))
+        return gnp.asarray(
+            stats.multivariate_normal.rvs(cov=C, size=n, random_state=rng)
+        )
 
     @staticmethod
     def randunif(dim, n, box, rng):
         return gnp.asarray(stats.qmc.scale(rng.uniform(size=(n, dim)), box[0], box[1]))
+
 
 class SMC:
     """Sequential Monte Carlo (SMC) sampler class.
@@ -246,7 +253,7 @@ class SMC:
 
     Methods
     -------
-    step(logpdf_parameterized_function, u_target)
+    step(logpdf_parameterized_function, logpdf_param)
         Perform a single SMC step.
     move_with_controlled_acceptation_rate()
         Adjust the particles' movement to control the acceptation rate.
@@ -274,27 +281,27 @@ class SMC:
         self.log = []  # Store the state logs
         self.stage = 0
         self.logging_current_ess = None
-        self.logging_current_threshold = None
-        self.logging_target_threshold = None
+        self.logging_current_logpdf_param = None
+        self.logging_target_logpdf_param = None
         self.logging_restart_iteration = 0
-        self.logging_threshold_sequence = []  # Sequence of thresholds in restart
+        self.logging_logpdf_param_sequence = []  # Sequence of logpdf_params in restart
         self.logging_acceptation_rate_sequence = []
 
-    def step(self, logpdf_parameterized_function, u_target):
+    def step(self, logpdf_parameterized_function, logpdf_param):
         """
         Perform a single step of the SMC process.
 
         Parameters
         ----------
         logpdf_parameterized_function : callable
-            A function that computes the log-probability density of a
-            given position.
-        u_target: float
-            Parameter value for the logpdf function.
+            A function that computes the log-probability density at
+            given positions.
+        logpdf_param: float
+            Parameter value for the logpdf function (typically, a threshold).
 
         """
         # Set target density
-        logpdf = lambda x: logpdf_parameterized_function(x, u_target)
+        logpdf = lambda x: logpdf_parameterized_function(x, logpdf_param)
         self.particles.set_logpdf(logpdf)
 
         # Reweight
@@ -310,7 +317,7 @@ class SMC:
             self.logging_acceptation_rate_sequence.append(acceptation_rate)
 
         # Logging
-        self.logging_current_threshold = u_target
+        self.logging_current_logpdf_param = logpdf_param
         self.log_state()
 
         # Debug plot, if needed
@@ -325,8 +332,8 @@ class SMC:
     def step_with_possible_restart(
         self,
         logpdf_parameterized_function,
-        initial_threshold,
-        target_threshold,
+        logpdf_initial_param,
+        target_logpdf_param,
         min_ess_ratio,
         p0,
         debug=False,
@@ -336,17 +343,17 @@ class SMC:
         This method checks if the effective sample size (ESS) falls
         below a specified ratio, and if so, initiates a restart. The
         restart process reinitializes particles and recalculates
-        thresholds to better target the desired distribution.
+        logpdf_params to better target the desired distribution.
 
         Parameters
         ----------
         logpdf_parameterized_function : callable
             A function that computes the log-probability density of a
             given position.
-        initial_threshold : float
-            The starting threshold value for the restart process.
-        target_threshold : float
-            The desired target threshold value for the log-probability
+        logpdf_initial_param : float
+            The starting logpdf_param value for the restart process.
+        target_logpdf_param : float
+            The desired target logpdf_param value for the log-probability
             density.
         min_ess_ratio : float
             The minimum acceptable ratio of ESS to the total number of
@@ -354,18 +361,18 @@ class SMC:
             initiated.
         p0 : float
             The prescribed probability used in the restart method to
-            compute the new threshold.
+            compute the new logpdf_param.
         debug : bool, optional
             If True, prints debug information during the
             process. Default is False.
         """
         # Logging
         self.stage += 1
-        self.logging_current_threshold = target_threshold
-        self.logging_target_threshold = target_threshold
+        self.logging_current_logpdf_param = target_logpdf_param
+        self.logging_target_logpdf_param = target_logpdf_param
 
         # Set target density
-        logpdf = lambda x: logpdf_parameterized_function(x, target_threshold)
+        logpdf = lambda x: logpdf_parameterized_function(x, target_logpdf_param)
         self.particles.set_logpdf(logpdf)
 
         # reweight
@@ -375,7 +382,10 @@ class SMC:
         # restart?
         if self.logging_current_ess / self.n < min_ess_ratio:
             self.restart(
-                logpdf_parameterized_function, initial_threshold, target_threshold, p0
+                logpdf_parameterized_function,
+                logpdf_initial_param,
+                target_logpdf_param,
+                p0,
             )
             # Note: Logging will occur inside the restart method.
         else:
@@ -392,8 +402,8 @@ class SMC:
     def restart(
         self,
         logpdf_parameterized_function,
-        initial_threshold,
-        final_threshold,
+        logpdf_initial_param,
+        target_logpdf_param,
         p0,
         debug=False,
     ):
@@ -404,10 +414,10 @@ class SMC:
         ----------
         logpdf_parameterized_function : callable
             Parametric probability density
-        initial_threshold : float
-            Starting threshold value.
-        final_threshold : float
-            Target threshold value.
+        logpdf_initial_param : float
+            Starting param value.
+        target_logpdf_param : float
+            Target param value.
         p0 : float
             Prescribed probability
         debug : bool
@@ -416,30 +426,30 @@ class SMC:
         if debug:
             print("---- Restarting SMC ----")
 
-        self.log_state()  # Log current and target thresholds, ess
+        self.log_state()  # Log current and target logpdf_params, ess
 
         self.particles.particles_init(self.box, self.n)
-        current_threshold = initial_threshold
+        current_logpdf_param = logpdf_initial_param
 
-        self.logging_threshold_sequence = [initial_threshold]
+        self.logging_logpdf_param_sequence = [logpdf_initial_param]
 
-        while current_threshold != final_threshold:
-            next_threshold = self.compute_next_threshold(
+        while current_logpdf_param != target_logpdf_param:
+            next_logpdf_param = self.compute_next_logpdf_param(
                 logpdf_parameterized_function,
-                current_threshold,
-                final_threshold,
+                current_logpdf_param,
+                target_logpdf_param,
                 p0,
                 debug,
             )
             self.logging_restart_iteration += 1
-            self.logging_threshold_sequence.append(next_threshold)
+            self.logging_logpdf_param_sequence.append(next_logpdf_param)
 
-            self.step(logpdf_parameterized_function, next_threshold)
+            self.step(logpdf_parameterized_function, next_logpdf_param)
 
-            current_threshold = next_threshold
+            current_logpdf_param = next_logpdf_param
 
         # Logging reinitialization
-        self.logging_threshold_sequence = []
+        self.logging_logpdf_param_sequence = []
         self.logging_restart_iteration = 0
 
     def move_with_controlled_acceptation_rate(self, debug=False):
@@ -473,24 +483,24 @@ class SMC:
 
             break
 
-    def _compute_p_value(self, logpdf_function, threshold, initial_threshold):
+    def _compute_p_value(self, logpdf_function, logpdf_param, logpdf_initial_param):
         """
         Compute the mean value of the exponentiated difference in
-        log-probability densities between two thresholds.
+        log-probability densities between two logpdf_params.
 
         .. math::
 
-            \\frac{1}{n} \\sum_{i=1}^{n} \\exp(logpdf_function(x_i, threshold)
-            - logpdf_function(x_i, initial_threshold))
+            \\frac{1}{n} \\sum_{i=1}^{n} \\exp(logpdf_function(x_i, logpdf_param)
+            - logpdf_function(x_i, logpdf_initial_param))
 
         Parameters
         ----------
         logpdf_function : callable
             Function to compute log-probability density.
-        threshold : float
-            The current threshold value.
-        initial_threshold : float
-            The initial threshold value used as a reference.
+        logpdf_param : float
+            The current logpdf_param value.
+        logpdf_initial_param : float
+            The initial logpdf_param value used as a reference.
 
         Returns
         -------
@@ -500,24 +510,24 @@ class SMC:
         """
         return gnp.mean(
             gnp.exp(
-                logpdf_function(self.particles.x, threshold)
-                - logpdf_function(self.particles.x, initial_threshold)
+                logpdf_function(self.particles.x, logpdf_param)
+                - logpdf_function(self.particles.x, logpdf_initial_param)
             )
         )
 
-    def compute_next_threshold(
+    def compute_next_logpdf_param(
         self,
         logpdf_parameterized_function,
-        initial_threshold,
-        final_threshold,
+        logpdf_initial_param,
+        target_logpdf_param,
         p0,
         debug=False,
     ):
         """
-        Compute the next threshold using a dichotomy method.
+        Compute the next logpdf_param using a dichotomy method.
 
         This method is part of the restart strategy. It computes a
-        threshold for the parameter of the
+        logpdf_param for the parameter of the
         logpdf_parameterized_function, ensuring a controlled migration
         of particles to the next stage. The parameter p0 corresponds
         to the fraction of moved particles that will be in the support
@@ -527,10 +537,10 @@ class SMC:
         ----------
         logpdf_parameterized_function : callable
             Parametric log-probability density.
-        initial_threshold : float
-            Starting threshold value.
-        final_threshold : float
-            Target threshold value.
+        logpdf_initial_param : float
+            Starting logpdf_param value.
+        target_logpdf_param : float
+            Target logpdf_param value.
         p0 : float
             Prescribed probability.
         debug : bool
@@ -539,34 +549,34 @@ class SMC:
         Returns
         -------
         float
-            Next computed threshold.
+            Next computed logpdf_param.
 
         """
         tolerance = 0.05
-        low = initial_threshold
-        high = final_threshold
+        low = logpdf_initial_param
+        high = target_logpdf_param
 
-        # Check if final_threshold can be reached with p >= p0
-        p_final = self._compute_p_value(
-            logpdf_parameterized_function, final_threshold, initial_threshold
+        # Check if target_logpdf_param can be reached with p >= p0
+        p_target = self._compute_p_value(
+            logpdf_parameterized_function, target_logpdf_param, logpdf_initial_param
         )
-        if p_final >= p0:
+        if p_target >= p0:
             if debug:
-                print("Final threshold reached.")
-            return final_threshold
+                print("Target logpdf_param reached.")
+            return target_logpdf_param
 
         while True:
             mid = (high + low) / 2
             p = self._compute_p_value(
-                logpdf_parameterized_function, mid, initial_threshold
+                logpdf_parameterized_function, mid, logpdf_initial_param
             )
 
             if debug:
                 print(
                     f"Search: p = {p}, "
-                    + f"current threshold = {mid}, "
-                    + f"initial = {initial_threshold}, "
-                    + f"target = {final_threshold}"
+                    + f"current logpdf_param / threshold = {mid}, "
+                    + f"initial = {logpdf_initial_param}, "
+                    + f"target = {target_logpdf_param}"
                 )
 
             if abs(p - p0) < tolerance:
@@ -588,11 +598,11 @@ class SMC:
             "stage": self.stage,
             "num_particles": self.n,
             "current_scaling_param": self.particles.param_s,
-            "target_threshold": self.logging_target_threshold,
-            "current_threshold": self.logging_current_threshold,
+            "target_logpdf_param": self.logging_target_logpdf_param,
+            "current_logpdf_param": self.logging_current_logpdf_param,
             "ess": self.logging_current_ess,
             "restart_iteration": self.logging_restart_iteration,
-            "threshold_sequence": self.logging_threshold_sequence.copy(),
+            "logpdf_param_sequence": self.logging_logpdf_param_sequence.copy(),
             "acceptation_rate_sequence": self.logging_acceptation_rate_sequence.copy(),
         }
         self.log.append(state)
@@ -602,7 +612,7 @@ class SMC:
     def plot_state(self):
         """Plot the state of the SMC process over different stages.
 
-        It includes visualizations of thresholds, effective sample
+        It includes visualizations of logpdf_params, effective sample
         size (ESS), and acceptation rates.
         """
 
@@ -620,8 +630,8 @@ class SMC:
 
         # Initializing lists to store data
         stages = []
-        target_thresholds = []
-        current_thresholds = []
+        target_logpdf_params = []
+        current_logpdf_params = []
         ess_values = []
         acceptation_rates = []
         stage_changes = []  # To mark the stages where change occurs
@@ -634,8 +644,8 @@ class SMC:
                 ar_length = 1
 
             stages.extend([entry["stage"]] * ar_length)
-            target_thresholds.extend([entry["target_threshold"]] * ar_length)
-            current_thresholds.extend([entry["current_threshold"]] * ar_length)
+            target_logpdf_params.extend([entry["target_logpdf_param"]] * ar_length)
+            current_logpdf_params.extend([entry["current_logpdf_param"]] * ar_length)
             ess_values.extend([entry["ess"]] * ar_length)
             acceptation_rates.extend(entry["acceptation_rate_sequence"])
 
@@ -644,20 +654,20 @@ class SMC:
 
         color = "tab:red"
         ax1.set_xlabel("Time")
-        ax1.set_ylabel("Threshold", color=color)
-        t, target_thresholds = make_stairs(target_thresholds)
-        t, current_thresholds = make_stairs(current_thresholds)
+        ax1.set_ylabel("logpdf_param", color=color)
+        t, target_logpdf_params = make_stairs(target_logpdf_params)
+        t, current_logpdf_params = make_stairs(current_logpdf_params)
         ax1.plot(
             t,
-            target_thresholds,
-            label="Target Threshold",
+            target_logpdf_params,
+            label="Target logpdf_param",
             color="red",
             linestyle="dashed",
         )
         ax1.plot(
             t,
-            current_thresholds,
-            label="Current Threshold",
+            current_logpdf_params,
+            label="Current logpdf_param",
             color="red",
             linestyle="solid",
         )

@@ -68,27 +68,25 @@ class ExpectedImprovement(SequentialPrediction):
         if method == 1:
             self.smc.step(
                 logpdf_parameterized_function=self.log_prob_excursion,
-                u_target=-self.current_minimum,
+                logpdf_param=-self.current_minimum,
             )
         elif method == 2:
             self.smc.restart(
                 logpdf_parameterized_function=self.log_prob_excursion,
-                initial_threshold=-gnp.max(self.zi),
-                final_threshold=-self.current_minimum,
+                logpdf_initial_param=-gnp.max(self.zi),
+                target_logpdf_param=-self.current_minimum,
                 p0=0.8,
                 debug=True
             )
         elif method == 3:
             self.smc.step_with_possible_restart(
                 logpdf_parameterized_function=self.log_prob_excursion,
-                initial_threshold=-gnp.max(self.zi),
-                target_threshold=-self.current_minimum,
+                logpdf_initial_param=-gnp.max(self.zi),
+                target_logpdf_param=-self.current_minimum,
                 min_ess_ratio=0.6,
                 p0=0.6,
                 debug=False
             )
-            
-
 
     def set_initial_design(self, xi, update_model=True, update_search_space=True):
         zi = self.computer_experiments_problem.eval(xi)
