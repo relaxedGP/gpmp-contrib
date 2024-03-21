@@ -908,7 +908,7 @@ class Model_ConstantMeanMaternpML(Model):
 class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
     """reGP model with a constant mean and a Matern covariance function."""
 
-    def __init__(self, threshold_strategy_params, *args, G=10, crit_optim_options={}, **kwargs):
+    def __init__(self, threshold_strategy_params, *args, crit_optim_options={}, **kwargs):
         """FIXME: comments"""
 
         super().__init__(*args, **kwargs)
@@ -916,8 +916,6 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
         self.threshold_strategies, self.threshold_strategies_info = self.set_threshold_strategies(
             threshold_strategy_params
         )
-
-        self.G = G
 
         default_crit_optim_options = {"relaxed_init": "flat", "method": "SLSQP"}
         default_crit_optim_options.update(crit_optim_options)
@@ -953,6 +951,17 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
     def build_threshold_strategy(self, output_idx: int, param: dict):
         """FIXME: comments"""
 
+        options = {}
+
+        if "task" not in param:
+            raise ValueError(f"'task' should be specified in 'param'")
+        task = param["task"]
+
+        if task == "levelset":
+            if "t" not in param:
+                raise ValueError(f"'t' should be specified in 'param' for task = 'levelset'")
+            options["t"] = param["t"]
+
         if "strategy" not in param:
             raise ValueError(f"'strategy' should be specified in 'param'")
         strategy = param["strategy"]
@@ -961,18 +970,19 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
             raise ValueError(f"'level' should be specified in 'param'")
         level = param["level"]
 
+        if "n_ranges" in param:
+            options["n_ranges"] = param["n_ranges"]
+        else:
+            # Default value
+            options["n_ranges"]  = 10
+
         if strategy == "Constant":
             if "n_init" not in param:
                 raise ValueError(f"'n_init' should be specified in 'param'")
-            n_init = param["n_init"]
+            options["n_init"]  = param["n_init"]
 
-            return regp.threshold_strategy[strategy](level, n_init)
-        elif strategy == "Concentration":
-            return regp.threshold_strategy[strategy](level)
-        elif strategy == "Spatial":
-            return regp.threshold_strategy[strategy](level, self.rng, self.box)
-        else:
-            raise NotImplementedError(f"Strategy {strategy} not implemented")
+        strategies_dict = getattr(regp, "{}_strategy".format(task))
+        return strategies_dict[strategy](level, self.rng, self.box, options)
 
     # def build_mean_function(self, output_idx: int, param: dict):
     #     pass
@@ -1056,22 +1066,22 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
 
             covparam_bounds = self.get_covparam_bounds(gnp.to_np(xi_), gnp.to_np(zi_[:, i]))
 
-            t0 = self.threshold_strategies[i](gnp.to_np(xi_), gnp.to_np(zi_[:, i]))
+            G, R_list = self.threshold_strategies[i](gnp.to_np(xi_), gnp.to_np(zi_[:, i]))
 
-            print("Build reGP model for t0 = {}".format(t0))
+            print("Build reGP model for G = {}".format(G))
 
-            print("Select t")
-            R = regp.select_optimal_threshold_above_t0(
+            print("Select R")
+            R = regp.select_optimal_R(
                 model["model"],
                 xi_,
                 gnp.asarray(zi_[:, i]),
-                t0,
+                G,
+                R_list,
                 covparam_bounds,
                 optim_options=self.crit_optim_options,
-                G=self.G,
             )
 
-            print("Build model for selected t")
+            print("Build model for selected R")
             self.models[i]["model"], self.zi_relaxed[:, i], _, info_ret = regp.remodel(
                 model["model"],
                 xi_,

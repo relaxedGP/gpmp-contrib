@@ -474,6 +474,58 @@ class SMC:
         self.logging_logpdf_param_sequence = []
         self.logging_restart_iteration = 0
 
+    def subset(
+        self,
+        func,
+        target,
+        p0,
+        debug=False,
+        max_iter=50
+    ):
+        """
+        Perform a subset simulation.
+
+        Parameters
+        ----------
+        func : callable
+            The function on which to make the subset.
+        target : float
+            Target value.
+        p0 : float
+            Prescribed probability
+        debug : bool
+            If True, print debug information.
+        debug : int
+            Maximum number of steps to reach the target.
+        """
+        if debug:
+            print("---- Start subset ----")
+
+        self.particles.particles_init(self.box, self.n)
+        u = - gnp.inf
+
+        cpt = 0
+        while u != target:
+            next_u = min(target, gnp.numpy.quantile(func(self.particles.x).numpy(), 1 - p0))
+            assert u <= next_u <= target, (u, next_u, target)
+
+            self.step(
+                lambda x, _u: gnp.log(func(x) >= _u),
+                next_u
+            )
+
+            u = next_u
+
+            cpt += 1
+            if cpt == max_iter:
+                print(
+                    "Warning: maximum number of steps {} reached for subset-simulation. Target: {}, Current: {}".format(
+                        max_iter, target, u
+                    )
+                )
+                return
+        print("Subset-simulation performed in {} steps.".format(cpt))
+
     def move_with_controlled_acceptation_rate(self, debug=False):
         """
         Adjust the particles' movement to maintain the acceptation

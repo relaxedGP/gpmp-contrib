@@ -2,8 +2,10 @@ from .computerexperiment import ComputerExperiment
 from .models import Model_MaternpREML
 from .models import Model_ConstantMeanMaternpML
 from .models import Model_ConstantMeanMaternp_reGP
-from .sequentialprediction import SequentialPrediction
 from .smc import SMC
+from .sequentialprediction import SequentialPrediction
+from .pointwisecriterion import PointwiseCriterion
+from .subsetpointwisecriterion import SubsetPointwiseCriterion
 from . import samplingcriteria
 from . import optim
 from . import regp

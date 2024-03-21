@@ -29,10 +29,54 @@ def get_rectified_spatial_quantile(xi, zi, box, rng, l):
 
     return max(spatial_quantile, raw_quantile)
 
-threshold_strategy = {
-    "Constant": lambda l, n_init: lambda xi, zi: np.quantile(zi[:n_init], l),
-    "Concentration": lambda l: lambda xi, zi: np.quantile(zi, l),
-    "Spatial": lambda l, rng, box: lambda xi, zi: get_rectified_spatial_quantile(xi, zi, box, rng, l)
+def one_sided(t0, xi, zi, n_ranges):
+    G = [- np.inf, float(t0)]
+
+    t = np.logspace(np.log10(t0 - zi.min()), np.log10(zi.max() - zi.min()), n_ranges) + zi.min()
+    t[-1] = np.inf
+    R_list = [[[float(_t), np.inf]] for _t in t]
+
+    return G, R_list
+
+optim_strategy = {
+    "Constant": lambda l, rng, box, options: lambda xi, zi: one_sided(
+        np.quantile(zi[:options["n_init"]], l), xi, zi, options["n_ranges"]
+    ),
+    "Concentration": lambda l, rng, box, options: lambda xi, zi: one_sided(
+        np.quantile(zi, l), xi, zi, options["n_ranges"]
+    ),
+    "Spatial": lambda l, rng, box, options: lambda xi, zi: one_sided(
+        get_rectified_spatial_quantile(xi, zi, box, rng, l), xi, zi, options["n_ranges"]
+    ),
+}
+
+def two_sided(t, d, xi, zi, n_ranges):
+    G = [float(t - d), float(t + d)]
+
+    excursion_range = max(
+        zi.max() - G[1],
+        G[0] - zi.min(),
+    )
+
+    side_spread = np.logspace(
+        np.log10(d),
+        np.log10(d + excursion_range),
+        num=n_ranges
+    )
+
+    R_list = [[[-np.inf, float(t - _s)], [float(t + _s), np.inf]] for _s in side_spread]
+    R_list[-1] = [[-np.inf, -np.inf], [np.inf, np.inf]]
+
+    return G, R_list
+
+
+levelset_strategy = {
+    "Constant": lambda l, options: lambda xi, zi: two_sided(
+        options["t"], np.quantile(np.abs(zi[:options["n_init"]] - options["t"]), l), xi, zi, options["n_ranges"]
+    ),
+    "Concentration": lambda l, options: lambda xi, zi: two_sided(
+        options["t"], np.quantile(np.abs(zi - options["t"]), l), xi, zi, options["n_ranges"]
+    ),
 }
 
 def get_membership_indices(zi, R):
@@ -204,7 +248,28 @@ def remodel(
     z1_size = z1.shape[0]
 
     if optim_options['relaxed_init'] == 'flat':
-        z1_relaxed_init = (R[0][0] + 2 * (R[0][0] - z0.min() )) * np.ones(z1.shape)
+        z1_relaxed_init = np.zeros(z1.shape)
+    
+        for i in range(z1_relaxed_init.shape[0]):
+            Ri = z1_bounds[i]
+            if Ri[0] > -np.inf and Ri[1] < np.inf:
+                z1_relaxed_init[i] = (Ri[0] + Ri[1])/2
+            elif Ri[0] > -np.inf and Ri[1] == np.inf:
+                if len(R) == 1:
+                    z0_min = z0.min()
+                else:
+                    z0_min = min([_r[1] for _r in R if _r[1] < Ri[0]])
+
+                z1_relaxed_init[i] = Ri[0] + 2 * (Ri[0] - z0_min)
+            elif Ri[0] == -np.inf and Ri[1] < np.inf:
+                if len(R) == 1:
+                    z0_max = z0.max()
+                else:
+                    z0_max = max([_r[0] for _r in R if _r[0] > Ri[1]])
+
+                z1_relaxed_init[i] = Ri[1] + 2 * (Ri[1] - z0_max)
+            else:
+                raise RuntimeError
     elif optim_options['relaxed_init'] == 'f-values':
         z1_relaxed_init = z1
     else:
@@ -337,8 +402,7 @@ def predict(model, xi, zi, xt, R, covparam0=None, info=False, verbosity=0):
 
     return zi_relaxed, (zpm, zpv), model, info_ret
 
-
-def select_optimal_threshold_above_t0(model, xi, zi, t0, covparam_bounds, optim_options, G=20):
+def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, optim_options):
     """
     Choose threshold for reGP with relaxation above t0
 
@@ -354,33 +418,33 @@ def select_optimal_threshold_above_t0(model, xi, zi, t0, covparam_bounds, optim_
         Locations of the observed data points.
     zi : ndarray, shape (n,)
         Observed values at the data points.
-    t0 : float
-        Lower limit of the threshold range.
+    G : interval (specified as [l, u])
+        Validation range.
+    R_list : list of lists of intervals (specified as [l, u])
+        Relaxation range candidates.
+    covparam_bounds : ndarray
+        Bounds for covariance parameters.
     optim_options : dict
         Options passed to remodel
-    G : int, optional, default: 20
-        Number of candidate thresholds to evaluate.
 
     Returns
     -------
-    Rgopt : ndarray, shape (1, 2)
-        Optimal relaxation interval, specified as [threshold, inf].
+    Rgopt : list of intervals (specified as [l, u])
+        Optimal relaxation range.
     """
-    t = gnp.logspace(gnp.log10(t0 - zi.min()), gnp.log10(gnp.max(zi) - zi.min()), G) + zi.min()
-    t[-1] = gnp.inf
+    q = len(R_list)
 
-    J = gnp.numpy.zeros(G)
-    for g in range(G):
-        Rg = gnp.numpy.array([[t[g], gnp.numpy.inf]])
-        model, zi_relaxed, _ = remodel(model, xi, zi, Rg, covparam_bounds, optim_options=optim_options)
+    J = gnp.numpy.zeros(q)
+    for i in range(q):
+        model, zi_relaxed, _ = remodel(model, xi, zi, R_list[i], covparam_bounds, optim_options=optim_options)
         zloom, zloov, _ = model.loo(xi, zi_relaxed)
-        tCRPS = gp.misc.scoringrules.tcrps_gaussian(zloom, gnp.sqrt(zloov), zi_relaxed, a=-gnp.inf, b=t0)
-        J[g] = gnp.sum(tCRPS)
+        tCRPS = gp.misc.scoringrules.tcrps_gaussian(zloom, gnp.sqrt(zloov), zi_relaxed, a=G[0], b=G[1])
+        J[i] = gnp.sum(tCRPS)
 
-    gopt = gnp.argmin(gnp.asarray(J))
-    Rgopt = gnp.numpy.array([[t[gopt], gnp.numpy.inf]])
+    iopt = gnp.argmin(gnp.asarray(J))
+    Ropt = R_list[iopt]
 
-    return Rgopt
+    return Ropt
 
 
 # ---------------------------------------
