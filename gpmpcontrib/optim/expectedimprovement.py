@@ -8,6 +8,7 @@ import gpmp as gp
 import gpmpcontrib.samplingcriteria as sampcrit
 from gpmpcontrib import SequentialPrediction
 from gpmpcontrib import SMC
+import collections
 
 
 class ExpectedImprovement(SequentialPrediction):
@@ -22,7 +23,7 @@ class ExpectedImprovement(SequentialPrediction):
         self.options = self.set_options(options)
 
         # search space
-        self.smc = self.init_smc(self.options["n_smc"])
+        self.smc = self.init_smc()
 
         # ei values
         self.ei = None
@@ -31,13 +32,26 @@ class ExpectedImprovement(SequentialPrediction):
         self.current_minimum = None
 
     def set_options(self, options):
-        default_options = {"n_smc": 1000}
-        default_options.update(options or {})
-        
-        return default_options
+        default_options = {
+            "smc_options": {"n": 1000, "mh_params": {}},
+            "smc_method": "step_with_possible_restart"
+        }
+        ExpectedImprovement.deep_update(default_options, options or {})
 
-    def init_smc(self, n_smc):
-        return SMC(self.computer_experiments_problem.input_box, n_smc)
+        return default_options
+    @staticmethod
+    def deep_update(d, u):
+        for k, v in u.items():
+            if isinstance(v, collections.Mapping):
+                if k in d.keys():
+                    d_k = d.get(k)
+                    if isinstance(d_k, collections.Mapping):
+                        ExpectedImprovement.deep_update(d_k, v)
+                        continue
+            d[k] = v
+
+    def init_smc(self):
+        return SMC(self.computer_experiments_problem.input_box, **self.options["smc_options"])
 
     def log_prob_excursion(self, x, u):
         min_threshold = 1e-6  # we do not want -inf values in the log probability
@@ -64,21 +78,21 @@ class ExpectedImprovement(SequentialPrediction):
         return log_prob_excur
 
     def update_search_space(self):
-        method = 3
-        if method == 1:
+        method = self.options["smc_method"]
+        if method == "step_simple":
             self.smc.step(
                 logpdf_parameterized_function=self.log_prob_excursion,
                 logpdf_param=-self.current_minimum,
             )
-        elif method == 2:
+        elif method == "restart":
             self.smc.restart(
                 logpdf_parameterized_function=self.log_prob_excursion,
                 logpdf_initial_param=-gnp.max(self.zi),
                 target_logpdf_param=-self.current_minimum,
                 p0=0.8,
-                debug=True
+                debug=False
             )
-        elif method == 3:
+        elif method == "step_with_possible_restart":
             self.smc.step_with_possible_restart(
                 logpdf_parameterized_function=self.log_prob_excursion,
                 logpdf_initial_param=-gnp.max(self.zi),
@@ -87,6 +101,8 @@ class ExpectedImprovement(SequentialPrediction):
                 p0=0.6,
                 debug=False
             )
+        else:
+            raise ValueError(method)
 
     def set_initial_design(self, xi, update_model=True, update_search_space=True):
         zi = self.computer_experiments_problem.eval(xi)
@@ -102,7 +118,7 @@ class ExpectedImprovement(SequentialPrediction):
             self.update_search_space()
 
     def make_new_eval(self, xnew, update_model=True, update_search_space=True):
-        znew = self.computer_experiments_problem.eval(xnew)
+        znew = self.computer_experiments_problem.eval(xnew.numpy())
 
         if update_model:
             self.set_new_eval_with_model_selection(xnew, znew)
@@ -114,12 +130,58 @@ class ExpectedImprovement(SequentialPrediction):
         if update_search_space:
             self.update_search_space()
 
+    def local_ei_opt(self, init):
+        """
+            init : ndarray
+        Initial guess of the EI maximizer.
+        """
+
+        def crit_(x):
+            x_row = x.reshape(1, -1)
+
+            zpm, zpv = self.predict(x_row, convert_out=False)
+            ei = sampcrit.expected_improvement(-self.current_minimum, -zpm, zpv)
+
+            return - ei[0, 0]
+
+        crit_jit = gnp.jax.jit(crit_)
+
+        dcrit = gnp.jax.jit(gnp.grad(crit_jit))
+
+        box = self.computer_experiments_problem.input_box
+        assert all([len(_v) == len(box[0]) for _v in box])
+
+        bounds = [tuple(box[i][k] for i in range(len(box))) for k in range(len(box[0]))]
+        ei_argmax = gp.kernel.autoselect_parameters(
+            init, crit_jit, dcrit, bounds=bounds
+        )
+
+        if gnp.numpy.isnan(ei_argmax).any():
+            return init
+
+        for i in range(ei_argmax.shape[0]):
+            if ei_argmax[i] < bounds[i][0]:
+                ei_argmax[i] = bounds[i][0]
+            if bounds[i][1] < ei_argmax[i]:
+                ei_argmax[i] = bounds[i][1]
+
+        if crit_(ei_argmax) < crit_(init):
+            output = ei_argmax
+        else:
+            output = init
+
+        return gnp.asarray(output.reshape(1, -1))
+
     def step(self):
         # evaluate ei on the search space
         zpm, zpv = self.predict(self.smc.particles.x, convert_out=False)
         self.ei = sampcrit.expected_improvement(-self.current_minimum, -zpm, zpv)
 
+        assert not gnp.isnan(self.ei).any()
+
         # make new evaluation
         x_new = self.smc.particles.x[gnp.argmax(gnp.asarray(self.ei))].reshape(1, -1)
+
+        x_new = self.local_ei_opt(gnp.to_np(x_new).ravel())
 
         self.make_new_eval(x_new)

@@ -11,6 +11,7 @@ import scipy.stats as stats
 import gpmp.num as gnp
 
 
+
 class ParticlesSet:
     """
     A class representing a set of particles for Sequential Monte
@@ -169,7 +170,26 @@ class ParticlesSet:
 
     def perturb(self):
         C = self.param_s * gnp.cov(self.x.reshape(self.x.shape[0], -1).T)
-        eps = ParticlesSet.multivariate_normal_rvs(C, self.n, self.rng)
+
+        try:
+            eps = ParticlesSet.multivariate_normal_rvs(C, self.n, self.rng)
+        except ValueError as e:
+            print("RW-MH move: non PSD matrix: \n{} ({})".format(C, e))
+            base_relative_jitter = 10**(-16)
+            n_auto_jitter = 17
+            success = False
+            for cpt in range(n_auto_jitter):
+                relative_jitter = 10**(cpt) * base_relative_jitter
+                C_jitter = C + relative_jitter * gnp.numpy.diag(C.diagonal())
+                try:
+                    eps = ParticlesSet.multivariate_normal_rvs(C_jitter, self.n, self.rng)
+                    success = True
+                    break
+                except ValueError as inner_e:
+                    print("RW-MH move: non PSD jittered matrix: \n{} ({})".format(C_jitter, inner_e))
+                    pass
+            if not success:
+                raise RuntimeError("RW-MH move: non PSD jittered matrix: \n{}".format(C_jitter))
 
         return self.x + eps.reshape(self.n, -1)
 
@@ -260,7 +280,7 @@ class SMC:
 
     """
 
-    def __init__(self, box, n=1000, rng=default_rng()):
+    def __init__(self, box, n=1000, mh_params={}, rng=default_rng()):
         """
         Initialize the SMC sampler.
         """
@@ -276,6 +296,8 @@ class SMC:
             "adjustment_factor": 1.4,
             "adjustment_max_iterations": 50,
         }
+
+        self.mh_params.update(mh_params)
 
         # Logging
         self.log = []  # Store the state logs

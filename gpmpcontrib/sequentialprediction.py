@@ -23,6 +23,7 @@ License: GPLv3 (see LICENSE)
 import gpmp.num as gnp
 import gpmp as gp
 from gpmpcontrib.models import Model
+import time
 
 
 class SequentialPrediction:
@@ -40,6 +41,7 @@ class SequentialPrediction:
         self.xtsim_xt_ind = None
         self.zsim = None
         self.zpsim = None
+        self.training_time = None
 
     @property
     def models(self):
@@ -72,15 +74,17 @@ class SequentialPrediction:
         self.update_params()
 
     def update_params(self):
+        t0 = time.time()
         if self.xi is not None and self.zi is not None:
-            try:
-                self.model.select_params(
-                    self.xi,
-                    self.zi,
-                    force_param_initial_guess=self.force_param_initial_guess,
-                )
-            except:
-                raise RuntimeError("Failed to update parameters")
+            self.model.select_params(
+                self.xi,
+                self.zi,
+                force_param_initial_guess=self.force_param_initial_guess,
+            )
+        else:
+            raise RuntimeError
+        t1 = time.time()
+        self.training_time = t1 - t0
 
     def predict(self, xt, convert_out=True):
         if self.zi.ndim == 1:

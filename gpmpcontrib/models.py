@@ -15,6 +15,7 @@ import time
 import gpmp.num as gnp
 import gpmp as gp
 from math import log
+import gpmpcontrib.regp as regp
 
 # ==============================================================================
 # Model Class
@@ -29,6 +30,8 @@ class Model:
         parameterized_mean,
         mean_params,
         covariance_params,
+        box,
+        rng,
         initial_guess_procedures=None,
         selection_criteria=None,
     ):
@@ -51,6 +54,10 @@ class Model:
             - 'param_length': The length of the mean function's parameter vector, required if 'function' is a callable.
         covariance_params : dict or list of dicts
             Parameters for defining covariance functions. Each dictionary must include a key 'function'.
+        box : array_like
+            The domain box.
+        rng : numpy.random.Generator
+            Random number generator.
         initial_guess_procedures : list of callables, optional
             A list of procedures for initial guess of model parameters, one for each output.
         selection_criteria : list of callables, optional
@@ -58,6 +65,8 @@ class Model:
         """
         self.name = name
         self.output_dim = output_dim
+        self.box = box
+        self.rng = rng
 
         self.parameterized_mean = parameterized_mean
         if self.parameterized_mean:
@@ -407,9 +416,18 @@ class Model:
                 model, xi_, zi_[:, i]
             )
 
+            # FIXME: Not in the spirit of the class.
+            covparam_bounds = self.get_covparam_bounds(gnp.to_np(xi_), gnp.to_np(zi_[:, i]))
+
+            meanparam_dim = meanparam0.shape[0]
+            meanparam_bounds = [(-gnp.inf, gnp.inf)] * meanparam_dim
+            bounds = meanparam_bounds + covparam_bounds
+
             param, info = gp.kernel.autoselect_parameters(
-                param0, crit, dcrit, silent=True, info=True
+                param0, crit, dcrit, bounds=bounds, silent=True, info=True
             )
+
+            assert not gnp.numpy.isnan(param).any()
 
             model["model"].meanparam = gnp.asarray(param[:mpl])
             model["model"].covparam = gnp.asarray(param[mpl:])
@@ -761,7 +779,7 @@ class Model_MaternpREML(Model):
 class Model_ConstantMeanMaternpML(Model):
     """GP model with a constant mean and a Matern covariance function. Parameters are estimated by ML"""
 
-    def __init__(self, name, output_dim, covariance_params=None):
+    def __init__(self, name, output_dim, rng, box, covariance_params=None):
         """
         Initialize a Model.
 
@@ -780,6 +798,8 @@ class Model_ConstantMeanMaternpML(Model):
             parameterized_mean=True,
             mean_params={"type": "constant"},
             covariance_params=covariance_params,
+            rng=rng,
+            box=box
         )
 
     def build_mean_function(self, output_idx: int, param: dict):
@@ -845,27 +865,7 @@ class Model_ConstantMeanMaternpML(Model):
         return maternp_covariance
 
     def build_parameters_initial_guess_procedure(self, output_idx: int, **build_param):
-        def anisotropic_parameters_initial_guess_constant_mean(model, xi, zi):
-            """Anisotropic initialization strategy with a parameterized constant mean."""
-            xi_ = gnp.asarray(xi)
-            zi_ = gnp.asarray(zi).reshape((-1, 1))  # Ensure zi_ is a column vector
-            n = xi_.shape[0]
-            d = xi_.shape[1]
-
-            delta = gnp.max(xi_, axis=0) - gnp.min(xi_, axis=0)
-            rho = gnp.exp(gnp.gammaln(d / 2 + 1) / d) / (gnp.pi**0.5) * delta
-
-            covparam = gnp.concatenate((gnp.array([gnp.log(1.0)]), -gnp.log(rho)))
-            zTKinvz, Kinv1, Kinvz = model.k_inverses(xi_, zi_, covparam)
-
-            mean_GLS = gnp.sum(Kinvz) / gnp.sum(Kinv1)
-            sigma2_GLS = (1.0 / n) * zTKinvz
-
-            return mean_GLS.reshape(1), gnp.concatenate(
-                (gnp.log(sigma2_GLS), -gnp.log(rho))
-            )
-
-        return anisotropic_parameters_initial_guess_constant_mean
+        return gp.kernel.anisotropic_parameters_initial_guess_constant_mean
 
     def build_selection_criterion(self, output_idx: int, **build_params):
         def ml_criterion(model, meanparam, covparam, xi, zi):
@@ -874,6 +874,244 @@ class Model_ConstantMeanMaternpML(Model):
 
         return ml_criterion
 
+    def get_covparam_bounds(self, xi, zi):
+        log_relative_amplitude = 60 * gnp.log(10)
+        covparam_bounds = [
+            (
+                gnp.log(zi.var()) - log_relative_amplitude,
+                gnp.log(zi.var()) + log_relative_amplitude
+            )
+        ]
+
+        # FIXME: Calibrated for a Matérn covariance function with \nu = 5/2.
+        delta_min = gnp.sqrt(xi.shape[1]) / 5
+        delta_max = 10**(-5)
+        for i in range(xi.shape[1]):
+            dists = gnp.numpy.array([gnp.numpy.abs(xi[j, i] - xi[k, i]) for k in range(xi.shape[0]) for j in range(xi.shape[0])])
+            min_dist = dists[dists > 0].min()
+            max_dist = dists.max()
+
+            upper_bound_min = -gnp.log(min_dist * delta_min)
+            upper_bound_max = -gnp.log(max_dist * delta_max)
+
+            upper_bound = min(upper_bound_min, upper_bound_max)
+
+            covparam_bounds = covparam_bounds + [(-gnp.inf, upper_bound)]
+
+        return covparam_bounds
+
+# ==============================================================================
+# ModelMaternp reGP Class
+# ==============================================================================
+
+
+class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
+    """reGP model with a constant mean and a Matern covariance function."""
+
+    def __init__(self, threshold_strategy_params, *args, G=10, crit_optim_options={}, **kwargs):
+        """FIXME: comments"""
+
+        super().__init__(*args, **kwargs)
+
+        self.threshold_strategies, self.threshold_strategies_info = self.set_threshold_strategies(
+            threshold_strategy_params
+        )
+
+        self.G = G
+
+        default_crit_optim_options = {"relaxed_init": "flat", "method": "SLSQP"}
+        default_crit_optim_options.update(crit_optim_options)
+        self.crit_optim_options = default_crit_optim_options
+
+
+    def set_threshold_strategies(self, threshold_strategy_params):
+        """FIXME: comments"""
+
+        if isinstance(threshold_strategy_params, dict):
+            threshold_strategy_params = [threshold_strategy_params] * self.output_dim
+        elif not isinstance(threshold_strategy_params, list) or len(threshold_strategy_params) != self.output_dim:
+            raise ValueError(
+                "threshold_strategy_params must be a dict or a list of dicts of length output_dim"
+            )
+
+        threshold_strategies = []
+        threshold_strategies_info = []
+
+        for i, param in enumerate(threshold_strategy_params):
+            if "function" in param and callable(param["function"]):
+                threshold_strategy = param["function"]
+            else:
+                threshold_strategy = self.build_threshold_strategy(i, param)
+
+            threshold_strategies.append(threshold_strategy)
+            threshold_strategies_info.append(
+                {"description": threshold_strategy.__name__}
+            )
+
+        return threshold_strategies, threshold_strategies_info
+
+    def build_threshold_strategy(self, output_idx: int, param: dict):
+        """FIXME: comments"""
+
+        if "strategy" not in param:
+            raise ValueError(f"'strategy' should be specified in 'param'")
+        strategy = param["strategy"]
+
+        if "level" not in param:
+            raise ValueError(f"'level' should be specified in 'param'")
+        level = param["level"]
+
+        if strategy == "Constant":
+            if "n_init" not in param:
+                raise ValueError(f"'n_init' should be specified in 'param'")
+            n_init = param["n_init"]
+
+            return regp.threshold_strategy[strategy](level, n_init)
+        elif strategy == "Concentration":
+            return regp.threshold_strategy[strategy](level)
+        elif strategy == "Spatial":
+            return regp.threshold_strategy[strategy](level, self.rng, self.box)
+        else:
+            raise NotImplementedError(f"Strategy {strategy} not implemented")
+
+    # def build_mean_function(self, output_idx: int, param: dict):
+    #     pass
+    #
+    # def build_covariance(self, output_idx: int, param: dict):
+    #     pass
+
+    def build_parameters_initial_guess_procedure(self, output_idx: int, **build_param):
+        pass
+
+    def build_selection_criterion(self, output_idx: int, **build_params):
+        pass
+
+    def compute_conditional_simulations(
+        self,
+        xi,
+        zi,
+        xt,
+        n_samplepaths=1,
+        type="intersection",
+        method="svd",
+        convert_in=True,
+        convert_out=True,
+    ):
+        """
+        Generate conditional sample paths based on input data and simulation points.
+
+        Parameters
+        ----------
+        xi : ndarray(ni, d)
+            Input data points used in the GP model.
+        zi : ndarray(ni, output_dim)
+            Observations at the input data points xi.
+        xt : ndarray(nt, d)
+            Points at which to simulate.
+        n_samplepaths : int, optional
+            Number of sample paths to generate. Default is 1.
+        type : str, optional
+            Specifies the relationship between xi and xt. Can be 'intersection'
+            (xi and xt may have a non-empty intersection) or 'disjoint'
+            (xi and xt must be disjoint). Default is 'intersection'.
+        method : str, optional
+            Method to draw unconditional sample paths. Can be 'svd' or 'chol'. Default is 'svd'.
+
+        Returns
+        -------
+        ndarray
+            An array of conditional sample paths at simulation points xt.
+            The shape of the array is (nt, n_samplepaths) for a single output model,
+            and (nt, n_samplepaths, output_dim) for multi-output models.
+        """
+        raise NotImplementedError
+
+    def make_selection_criterion_with_gradient(
+        self,
+        model,
+        xi_,
+        zi_,
+    ):
+        raise NotImplementedError
+
+    def select_params(self, xi, zi, force_param_initial_guess=True):
+        """Parameter selection"""
+
+        xi_ = gnp.asarray(xi)
+        zi_ = gnp.asarray(zi)
+        if zi_.ndim == 1:
+            zi_ = zi_.reshape(-1, 1)
+
+        # Safer: one run with small length scales does not alter the subsequent ones.
+        assert force_param_initial_guess
+
+        self.zi_relaxed = gnp.copy(zi_)
+
+        for i in range(self.output_dim):
+            tic = time.time()
+
+            model = self.models[i]
+            mpl = model["mean_paramlength"]
+            assert mpl == 1
+
+            covparam_bounds = self.get_covparam_bounds(gnp.to_np(xi_), gnp.to_np(zi_[:, i]))
+
+            t0 = self.threshold_strategies[i](gnp.to_np(xi_), gnp.to_np(zi_[:, i]))
+
+            print("Build reGP model for t0 = {}".format(t0))
+
+            print("Select t")
+            R = regp.select_optimal_threshold_above_t0(
+                model["model"],
+                xi_,
+                gnp.asarray(zi_[:, i]),
+                t0,
+                covparam_bounds,
+                optim_options=self.crit_optim_options,
+                G=self.G,
+            )
+
+            print("Build model for selected t")
+            self.models[i]["model"], self.zi_relaxed[:, i], _, info_ret = regp.remodel(
+                model["model"],
+                xi_,
+                gnp.asarray(zi_[:, i]),
+                R,
+                covparam_bounds,
+                True,
+                optim_options=self.crit_optim_options,
+            )
+            print("reGP model built")
+
+            self.models[i]["info"] = info_ret
+            self.models[i]["R"] = R
+            self.models[i]["param0"] = None
+            self.models[i]["param"] = None
+            self.models[i]["time"] = time.time() - tic
+
+    def predict(self, xi, zi, xt, convert_in=True, convert_out=True):
+        """Predict method"""
+        assert self.zi_relaxed.ndim == 2
+
+        zpm_ = gnp.empty((xt.shape[0], self.output_dim))
+        zpv_ = gnp.empty((xt.shape[0], self.output_dim))
+
+        for i in range(self.output_dim):
+            model_predict = self.models[i]["model"].predict
+            zpm_i, zpv_i = model_predict(
+                xi, self.zi_relaxed[:, i], xt, convert_in=convert_in, convert_out=False
+            )
+            zpm_ = gnp.set_col2(zpm_, i, zpm_i)
+            zpv_ = gnp.set_col2(zpv_, i, zpv_i)
+
+        if convert_out:
+            zpm = gnp.to_np(zpm_)
+            zpv = gnp.to_np(zpv_)
+        else:
+            zpm = zpm_
+            zpv = zpv_
+
+        return zpm, zpv
 
 # ==============================================================================
 # Mean Functions Section

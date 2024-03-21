@@ -9,7 +9,31 @@ import time
 import numpy as np
 import gpmp.num as gnp
 import gpmp as gp
+import sklearn.neighbors
+from .smc import ParticlesSet
 
+
+def get_one_nn_predictions(x, y, box, rng, N=100000):
+    grid = ParticlesSet.randunif(x.shape[1], N, box, rng).numpy()
+
+    knn = sklearn.neighbors.KNeighborsRegressor(n_neighbors=1)
+    knn.fit(x, y)
+    knn_pred = knn.predict(grid)
+
+    return knn_pred
+
+def get_rectified_spatial_quantile(xi, zi, box, rng, l):
+    nn_predictions = get_one_nn_predictions(xi, zi, box, rng)
+    spatial_quantile = np.quantile(nn_predictions, l)
+    raw_quantile = np.quantile(zi, l)
+
+    return max(spatial_quantile, raw_quantile)
+
+threshold_strategy = {
+    "Constant": lambda l, n_init: lambda xi, zi: np.quantile(zi[:n_init], l),
+    "Concentration": lambda l: lambda xi, zi: np.quantile(zi, l),
+    "Spatial": lambda l, rng, box: lambda xi, zi: get_rectified_spatial_quantile(xi, zi, box, rng, l)
+}
 
 def get_membership_indices(zi, R):
     """
@@ -78,7 +102,7 @@ def split_data(xi, zi, ei, R):
     return (x0, z0, ind0), (x1, z1, bounds, ind1)
 
 
-def make_regp_criterion_with_gradient(model, x0, z0, x1):
+def make_regp_criterion_with_gradient(model, x0, z0, x1, meanparam_dim):
     """
     Make regp criterion function with gradient.
 
@@ -92,6 +116,8 @@ def make_regp_criterion_with_gradient(model, x0, z0, x1):
         Observed values at the data points not relaxed
     x1 : ndarray, shape (n1, d)
         Locations of the relaxed  data points
+    meanparam_dim : int,
+        Number of dimension of the mean parameter
 
     Returns
     -------
@@ -110,21 +136,24 @@ def make_regp_criterion_with_gradient(model, x0, z0, x1):
 
     # selection criterion
 
-    selection_criterion = model.negative_log_restricted_likelihood
+    selection_criterion = model.negative_log_likelihood
 
     def crit_(param):
+        meanparam = param[0:meanparam_dim]
+
+        param = param[meanparam_dim:]
 
         if n1 > 0:
             covparam = param[0:-n1]
             z1 = param[-n1:]
         elif n1 == 0:
             covparam = param
-            z1 = []
+            z1 = gnp.array([])
         else:
             raise ValueError(n1)
 
         zi = gnp.concatenate((z0, z1))
-        l = selection_criterion(covparam, xi, zi)
+        l = selection_criterion(meanparam, covparam, xi, zi)
         return l
 
     crit_jit = gnp.jax.jit(crit_)
@@ -134,7 +163,9 @@ def make_regp_criterion_with_gradient(model, x0, z0, x1):
     return crit_jit, dcrit
 
 
-def remodel(model, xi, zi, R, covparam0=None, info=False, verbosity=0):
+def remodel(
+        model, xi, zi, R, covparam_bounds, info=False, verbosity=0, optim_options={},
+):
     """
     Perform reGP optimization (REML + relaxation)
 
@@ -148,8 +179,6 @@ def remodel(model, xi, zi, R, covparam0=None, info=False, verbosity=0):
         Observed values at the data points.
     R : list of intervals
         List of relaxation intervals, each specified as [l_k, u_k].
-    covparam0 : ndarray, optional
-        Initial guess for the covariance parameters.
     info : bool, optional
         Whether to return additional information.
     verbosity : int, optional
@@ -169,24 +198,41 @@ def remodel(model, xi, zi, R, covparam0=None, info=False, verbosity=0):
 
     tic = time.time()
 
-    # Initial guess for the covariance parameters if not provided
-    if covparam0 is None:
-        covparam0 = gp.kernel.anisotropic_parameters_initial_guess(model, xi, zi)
-    covparam_dim = covparam0.shape[0]
-    covparam_bounds = [gnp.array([-gnp.inf, gnp.inf])] * covparam0.shape[0]
-
     # Membership indices and split data
     ei = get_membership_indices(gnp.to_np(zi), R)
     (x0, z0, ind0), (x1, z1, z1_bounds, ind1) = split_data(xi, gnp.to_np(zi), ei, R)
     z1_size = z1.shape[0]
 
-    # Initial parameter vector and bounds
-    p0 = np.concatenate((covparam0, z1.reshape(-1)))
+    if optim_options['relaxed_init'] == 'flat':
+        z1_relaxed_init = (R[0][0] + 2 * (R[0][0] - z0.min() )) * np.ones(z1.shape)
+    elif optim_options['relaxed_init'] == 'f-values':
+        z1_relaxed_init = z1
+    else:
+        raise ValueError(
+            'Non-supported init option for relaxed observations: {}.'.format(optim_options['relaxed_init'])
+        )
 
-    bounds = covparam_bounds + z1_bounds
+    # Initial guess for the parameters
+    meanparam0, covparam0 = gp.kernel.anisotropic_parameters_initial_guess_constant_mean(
+        model,
+        np.vstack((x0, x1)),
+        np.concatenate((z0, z1_relaxed_init))
+    )
+
+    meanparam0 = meanparam0.reshape(1)
+
+    covparam_dim = covparam0.shape[0]
+
+    meanparam_dim = meanparam0.shape[0]
+    meanparam_bounds = [(-gnp.inf, gnp.inf)] * meanparam_dim
+
+    # Initial parameter vector and bounds
+    p0 = np.concatenate((meanparam0.reshape(1), covparam0, z1_relaxed_init))
+
+    bounds = meanparam_bounds + covparam_bounds + [tuple(_z1_bounds) for _z1_bounds in z1_bounds]
 
     # reGP criterion
-    nlrl, dnlrl = make_regp_criterion_with_gradient(model, x0, z0, x1)
+    nlrl, dnlrl = make_regp_criterion_with_gradient(model, x0, z0, x1, meanparam_dim)
 
     # Verbosity level
     silent = True
@@ -195,18 +241,26 @@ def remodel(model, xi, zi, R, covparam0=None, info=False, verbosity=0):
     elif verbosity == 2:
         silent = False
 
+    # Check if p0 is admissible
+    assert all([(bounds[i][0] <= p0[i]) and (p0[i] <= bounds[i][1]) for i in range(p0.shape[0])]), (p0, bounds)
+
     # Optimize parameters
+    _opts = {k: v for (k, v) in optim_options.items() if k not in ['method', 'relaxed_init']}
     popt, info_ret = gp.kernel.autoselect_parameters(
-        p0, nlrl, dnlrl, bounds=bounds, silent=silent, info=True
+        p0, nlrl, dnlrl, bounds=bounds, silent=silent, info=True, method=optim_options['method'], method_options=_opts
     )
+
+    assert not np.isnan(popt).any()
 
     if verbosity == 1:
         print("done.")
 
     # Update the model and relaxed data
-    model.covparam = gnp.asarray(popt[0:covparam_dim])
+    model.meanparam = gnp.asarray(popt[0:meanparam_dim])
 
-    z1_relaxed = popt[covparam_dim:]
+    model.covparam = gnp.asarray(popt[meanparam_dim:(covparam_dim + meanparam_dim)])
+
+    z1_relaxed = popt[(covparam_dim+meanparam_dim):]
 
     zi_relaxed = gnp.zeros(zi.shape)
     if gnp._gpmp_backend_ == 'jax':
@@ -215,11 +269,13 @@ def remodel(model, xi, zi, R, covparam0=None, info=False, verbosity=0):
     else:
         zi_relaxed[ind0] = gnp.asarray(z0)
         zi_relaxed[ind1] = gnp.asarray(z1_relaxed)
-    
+
     # Return results
     if info:
         info_ret["covparam0"] = covparam0
         info_ret["covparam"] = model.covparam
+        info_ret["meanparam0"] = meanparam0
+        info_ret["meanparam"] = model.meanparam
         info_ret["selection_criterion"] = nlrl
         info_ret["time"] = time.time() - tic
         return model, zi_relaxed, ind1, info_ret
@@ -282,7 +338,7 @@ def predict(model, xi, zi, xt, R, covparam0=None, info=False, verbosity=0):
     return zi_relaxed, (zpm, zpv), model, info_ret
 
 
-def select_optimal_threshold_above_t0(model, xi, zi, t0, G=20):
+def select_optimal_threshold_above_t0(model, xi, zi, t0, covparam_bounds, optim_options, G=20):
     """
     Choose threshold for reGP with relaxation above t0
 
@@ -300,6 +356,8 @@ def select_optimal_threshold_above_t0(model, xi, zi, t0, G=20):
         Observed values at the data points.
     t0 : float
         Lower limit of the threshold range.
+    optim_options : dict
+        Options passed to remodel
     G : int, optional, default: 20
         Number of candidate thresholds to evaluate.
 
@@ -309,11 +367,12 @@ def select_optimal_threshold_above_t0(model, xi, zi, t0, G=20):
         Optimal relaxation interval, specified as [threshold, inf].
     """
     t = gnp.logspace(gnp.log10(t0 - zi.min()), gnp.log10(gnp.max(zi) - zi.min()), G) + zi.min()
+    t[-1] = gnp.inf
 
     J = gnp.numpy.zeros(G)
     for g in range(G):
         Rg = gnp.numpy.array([[t[g], gnp.numpy.inf]])
-        model, zi_relaxed, _ = remodel(model, xi, zi, Rg)
+        model, zi_relaxed, _ = remodel(model, xi, zi, Rg, covparam_bounds, optim_options=optim_options)
         zloom, zloov, _ = model.loo(xi, zi_relaxed)
         tCRPS = gp.misc.scoringrules.tcrps_gaussian(zloom, gnp.sqrt(zloov), zi_relaxed, a=-gnp.inf, b=t0)
         J[g] = gnp.sum(tCRPS)
