@@ -71,11 +71,14 @@ def two_sided(t, d, xi, zi, n_ranges):
 
 
 levelset_strategy = {
-    "Constant": lambda l, options: lambda xi, zi: two_sided(
+    "Constant": lambda l, rng, box, options: lambda xi, zi: two_sided(
         options["t"], np.quantile(np.abs(zi[:options["n_init"]] - options["t"]), l), xi, zi, options["n_ranges"]
     ),
-    "Concentration": lambda l, options: lambda xi, zi: two_sided(
+    "Concentration": lambda l, rng, box, options: lambda xi, zi: two_sided(
         options["t"], np.quantile(np.abs(zi - options["t"]), l), xi, zi, options["n_ranges"]
+    ),
+    "Spatial": lambda l, rng, box, options: lambda xi, zi: two_sided(
+        options["t"], get_rectified_spatial_quantile(xi, np.abs(zi - options["t"]), box, rng, l), xi, zi, options["n_ranges"]
     ),
 }
 
