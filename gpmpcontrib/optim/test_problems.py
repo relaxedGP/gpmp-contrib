@@ -338,7 +338,7 @@ g10 = ComputerExperiment(
 # ===== G10MOD =====
 def _g10mod_constraints(x):
     raw_constraints = _g10_constraints(x)
-    raw_constraints[:, [3, 4, 5]] = np.log1p(raw_constraints[:, [3, 4, 5]])
+    raw_constraints[:, [3, 4, 5]] = plog(raw_constraints[:, [3, 4, 5]])
     return raw_constraints
 
 _g10mod_dict = _g10_dict.copy()
