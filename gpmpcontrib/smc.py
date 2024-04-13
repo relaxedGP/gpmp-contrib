@@ -169,6 +169,9 @@ class ParticlesSet:
         self.w = gnp.full((self.n,), 1 / self.n)
 
     def perturb(self):
+        assert self.param_s <= 10**4, "param_s is too high: {}".format(self.param_s)
+        assert self.param_s >= 10**(-8), "param_s is too low: {}".format(self.param_s)
+
         C = self.param_s * gnp.cov(self.x.reshape(self.x.shape[0], -1).T)
 
         try:
@@ -341,6 +344,15 @@ class SMC:
         # Logging
         self.logging_current_logpdf_param = logpdf_param
         self.log_state()
+
+        # Check degeneracy
+        min_prop = 0.2
+        n_unique_particles = gnp.unique(self.particles.x, axis=0).shape[0]
+        assert n_unique_particles >= min_prop * self.particles.x.shape[0], \
+            "Too few unique particles: {} over {}".format(
+            n_unique_particles,
+            self.particles.x.shape[0],
+        )
 
         # Debug plot, if needed
         debug = False
