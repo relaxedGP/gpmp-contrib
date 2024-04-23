@@ -43,10 +43,10 @@ class PointwiseCriterion(SequentialPrediction):
     @staticmethod
     def deep_update(d, u):
         for k, v in u.items():
-            if isinstance(v, collections.Mapping):
+            if isinstance(v, collections.abc.Mapping):
                 if k in d.keys():
                     d_k = d.get(k)
-                    if isinstance(d_k, collections.Mapping):
+                    if isinstance(d_k, collections.abc.Mapping):
                         PointwiseCriterion.deep_update(d_k, v)
                         continue
             d[k] = v
