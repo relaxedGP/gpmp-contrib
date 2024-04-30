@@ -170,7 +170,7 @@ class ParticlesSet:
 
     def perturb(self):
         assert self.param_s <= 10**4, "param_s is too high: {}".format(self.param_s)
-        lower_bound_param_s = 10**(-8)
+        lower_bound_param_s = 10**(-12)
         if self.param_s < lower_bound_param_s:
             raise ParamSError(self.param_s, lower_bound_param_s, gnp.numpy.inf)
 
