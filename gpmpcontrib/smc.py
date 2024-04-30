@@ -170,7 +170,9 @@ class ParticlesSet:
 
     def perturb(self):
         assert self.param_s <= 10**4, "param_s is too high: {}".format(self.param_s)
-        assert self.param_s >= 10**(-8), "param_s is too low: {}".format(self.param_s)
+        lower_bound_param_s = 10**(-8)
+        if self.param_s < lower_bound_param_s:
+            raise ParamSError(self.param_s, lower_bound_param_s, gnp.numpy.inf)
 
         C = self.param_s * gnp.cov(self.x.reshape(self.x.shape[0], -1).T)
 
@@ -273,6 +275,8 @@ class SMC:
         Number of particles.
     particles : ParticlesSet
         Instance of ParticlesSet class to manage the particles.
+    emergency_error_counter : int
+        Counts the number of emergency_errors (used to raise a StoppingError).
 
     Methods
     -------
@@ -301,6 +305,8 @@ class SMC:
         }
 
         self.mh_params.update(mh_params)
+
+        self.emergency_error_counter = 0
 
         # Logging
         self.log = []  # Store the state logs
@@ -491,6 +497,7 @@ class SMC:
         func,
         target,
         p0,
+        xi,
         debug=False,
         max_iter=50
     ):
@@ -505,6 +512,8 @@ class SMC:
             Target value.
         p0 : float
             Prescribed probability
+        xi : array
+            The current design-of-experiments.
         debug : bool
             If True, print debug information.
         debug : int
@@ -513,30 +522,91 @@ class SMC:
         if debug:
             print("---- Start subset ----")
 
+        # Subset-simulation message termination
+        message = None
+
+        emergency_error_counter_max = 5
+
+        stopping_tol = 0.1
+        max_criterion_xi = func(xi).numpy().max()
+
+        diameter_crit_tol = 0.9
+
         self.particles.particles_init(self.box, self.n)
         u = - gnp.inf
 
         cpt = 0
         while u != target:
-            next_u = min(target, gnp.numpy.quantile(func(self.particles.x).numpy(), 1 - p0))
+            criterion_particles = func(self.particles.x).numpy()
+            next_u = min(target, gnp.numpy.quantile(criterion_particles, 1 - p0))
             assert u <= next_u <= target, (u, next_u, target)
 
-            self.step(
-                lambda x, _u: gnp.log(func(x) >= _u),
-                next_u
-            )
+            max_criterion_last_particles = criterion_particles.max()
 
+            try:
+                self.step(
+                    lambda x, _u: gnp.log(func(x) >= _u),
+                    next_u
+                )
+            except ParamSError as e:
+                # FIXME: Define a global default value?
+                self.particles.param_s = 0.05  # Default scaling parameter for perturbation
+                if max_criterion_xi <= next_u:
+                    message = str(e) + " Aborting only the subset-simulation since the best observation's value " \
+                                  "has been reached in {} steps.".format(cpt)
+                    break
+                else:
+                    self.emergency_error_counter += 1
+                    if self.emergency_error_counter >= emergency_error_counter_max:
+                        print(e)
+                        raise StoppingError("Aborting the run since {} emergency errors have occurred successively"
+                                            " without reaching the best observation's value.".format(
+                                self.emergency_error_counter
+                            )
+                        )
+                    else:
+                        print(
+                            e,
+                            "Aborting only the subset-simulation since it is only the {}-th (max. {}) time"
+                            "the best observation's value has not been reached in {}"
+                            " steps.".format(self.emergency_error_counter, emergency_error_counter_max, cpt)
+                        )
+                        return
             u = next_u
 
             cpt += 1
             if cpt == max_iter:
-                print(
-                    "Warning: maximum number of steps {} reached for subset-simulation. Target: {}, Current: {}".format(
-                        max_iter, target, u
+                message = "Warning: maximum number of steps {} reached for subset-simulation." \
+                          " Target: {}, Current: {}".format(max_iter, target, u)
+                break
+
+            if max_criterion_xi <= u:
+                if (max_criterion_last_particles - u) <= stopping_tol * (max_criterion_last_particles - max_criterion_xi):
+                    message = "Subset-simulation stopping after {} steps because the numerical tolerance is reached " \
+                              "(max. design: {}, threshold: {}, max. particles: {}).".format(
+                            cpt,
+                            max_criterion_xi,
+                            u,
+                            max_criterion_last_particles
                     )
+                    break
+
+            diameter_particles = gnp.cdist_xx(self.particles.x).max()
+            dist_xi_particles = gnp.custom_cdist(xi, self.particles.x).min()
+            if diameter_particles <= diameter_crit_tol * dist_xi_particles:
+                message = "Subset-simulation stopping after {} steps because the cloud has diameter {} " \
+                          "which is less than a fraction {} of the distance {} to the design-of-experiments".format(
+                        cpt,
+                        diameter_particles,
+                        diameter_crit_tol,
+                        dist_xi_particles
                 )
-                return
-        print("Subset-simulation performed in {} steps.".format(cpt))
+                break
+
+        if message is None:
+            message = "Subset-simulation performed in {} steps.".format(cpt)
+        print(message)
+        self.emergency_error_counter = 0
 
     def move_with_controlled_acceptation_rate(self, debug=False):
         """
@@ -792,3 +862,18 @@ class SMC:
         fig.tight_layout()
         plt.title("SMC Process State Over Stages")
         plt.show()
+
+# Error classes
+class ParamSError(BaseException):
+    def __init__(self, param_s, lower, upper):
+        message = "ParamSError: param_s out of range (value: {}, lower bound: {}, upper_bound: {}).".format(
+            param_s,
+            lower,
+            upper
+        )
+        super().__init__(message)
+
+class StoppingError(BaseException):
+    def __init__(self, sub_message):
+        message = "Stopping error: {}".format(sub_message)
+        super().__init__(message)
