@@ -220,10 +220,15 @@ class ParticlesSet:
         accepted_moves = 0  # Counter for accepted moves
         for i in range(self.n):
             if ParticlesSet.rand(self.rng) < rho[i]:
+                # Check if the RW move is numerically equal to the starting point. The convention that the move is not
+                # accepted is used otherwise.
+                if not (self.x[i, :] == y[i, :]).all():
+                    accepted_moves += 1
+                else:
+                    print("The RW proposed a point numerically indistinguishable from the starting point.")
                 # Update the particle position and log probability if the move is accepted
                 self.x = gnp.set_row2(self.x, i, y[i, :])
                 self.logpx = gnp.set_elem1(self.logpx, i, logpy[i])
-                accepted_moves += 1
 
         # Compute the acceptation rate
         acceptation_rate = accepted_moves / self.n
