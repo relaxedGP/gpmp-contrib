@@ -43,6 +43,7 @@ class SubsetPointwiseCriterion(PointwiseCriterion):
                 func=self.boxify_criterion,
                 target=target,
                 p0=0.2,
+                xi=self.xi,
                 debug=False
             )
         else:
