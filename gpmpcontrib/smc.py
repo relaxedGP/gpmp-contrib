@@ -217,18 +217,23 @@ class ParticlesSet:
         # Compute acceptation probabilities
         rho = gnp.minimum(1, gnp.exp(logpy - self.logpx))
 
-        accepted_moves = 0  # Counter for accepted moves
+        accepted_moves = 0    # Counter for accepted moves
+        negligible_moves = 0  # Counter for 'negligible' moves, i.e., moves that do not change the particle
         for i in range(self.n):
             if ParticlesSet.rand(self.rng) < rho[i]:
-                # Check if the RW move is numerically equal to the starting point. The convention that the move is not
-                # accepted is used otherwise.
+                # Check if the RW move is numerically equal to the starting point.
+                # The convention that the move is not accepted is used otherwise.
                 if not (self.x[i, :] == y[i, :]).all():
                     accepted_moves += 1
                 else:
-                    print("The RW proposed a point numerically indistinguishable from the starting point.")
+                    negligible_moves += 1
                 # Update the particle position and log probability if the move is accepted
                 self.x = gnp.set_row2(self.x, i, y[i, :])
                 self.logpx = gnp.set_elem1(self.logpx, i, logpy[i])
+
+        # Warn about negligible moves
+        if negligible_moves > 0:
+            print("The RW proposed {} negligible moves.".format(negligible_moves))
 
         # Compute the acceptation rate
         acceptation_rate = accepted_moves / self.n
