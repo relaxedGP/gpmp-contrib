@@ -540,7 +540,7 @@ class SMC:
         stopping_tol = 0.1
         max_criterion_xi = func(xi).numpy().max()
 
-        diameter_crit_tol = 0.9
+        diameter_crit_tol = 0.5
 
         self.particles.particles_init(self.box, self.n)
         u = - gnp.inf
