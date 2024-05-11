@@ -105,10 +105,7 @@ class ParticlesSet:
             weights of the initialized particles.
 
         """
-        assert (
-            self.dim == len(box[0]),
-            "Box dimension do not match particle dimension.",
-        )
+        assert self.dim == len(box[0]), "Box dimension do not match particle dimension."
         self.n = n
 
         # Initialize positions
