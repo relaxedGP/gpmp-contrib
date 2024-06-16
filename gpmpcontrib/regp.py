@@ -29,12 +29,12 @@ def get_rectified_spatial_quantile(xi, zi, box, rng, l):
 
     return max(spatial_quantile, raw_quantile)
 
-def one_sided(t0, xi, zi, n_ranges):
-    assert t0 > zi.min(), (t0, zi)
+def one_sided(t0, min_value, max_value, n_ranges):
+    assert t0 > min_value, (min_value, max_value)
 
     G = [- np.inf, float(t0)]
 
-    t = np.logspace(np.log10(t0 - zi.min()), np.log10(zi.max() - zi.min()), n_ranges) + zi.min()
+    t = np.logspace(np.log10(t0 - min_value), np.log10(max_value - min_value), n_ranges) + min_value
     t[-1] = np.inf
     R_list = [[[float(_t), np.inf]] for _t in t]
 
@@ -42,13 +42,13 @@ def one_sided(t0, xi, zi, n_ranges):
 
 optim_strategy = {
     "Constant": lambda l, rng, box, options: lambda xi, zi: one_sided(
-        np.quantile(zi[:options["n_init"]], l), xi, zi, options["n_ranges"]
+        np.quantile(zi[:options["n_init"]], l), zi.min(), zi.max(), options["n_ranges"]
     ),
     "Concentration": lambda l, rng, box, options: lambda xi, zi: one_sided(
-        np.quantile(zi, l), xi, zi, options["n_ranges"]
+        np.quantile(zi, l), zi.min(), zi.max(), options["n_ranges"]
     ),
     "Spatial": lambda l, rng, box, options: lambda xi, zi: one_sided(
-        get_rectified_spatial_quantile(xi, zi, box, rng, l), xi, zi, options["n_ranges"]
+        get_rectified_spatial_quantile(xi, zi, box, rng, l), zi.min(), zi.max(), options["n_ranges"]
     ),
 }
 
