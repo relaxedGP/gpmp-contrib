@@ -30,6 +30,8 @@ def get_rectified_spatial_quantile(xi, zi, box, rng, l):
     return max(spatial_quantile, raw_quantile)
 
 def one_sided(t0, xi, zi, n_ranges):
+    assert t0 > zi.min(), (t0, zi)
+
     G = [- np.inf, float(t0)]
 
     t = np.logspace(np.log10(t0 - zi.min()), np.log10(zi.max() - zi.min()), n_ranges) + zi.min()
@@ -51,6 +53,8 @@ optim_strategy = {
 }
 
 def two_sided(t, d, xi, zi, n_ranges):
+    assert d > 0, (t, d, zi)
+
     G = [float(t - d), float(t + d)]
 
     excursion_range = max(
