@@ -137,13 +137,21 @@ class PointwiseCriterion(SequentialPrediction):
         Initial guess of the criterion maximizer.
         """
 
+        buffer_x = []
+        buffer_y = []
+
         def crit_(x):
             x_row = x.reshape(1, -1)
 
             zpm, zpv = self.predict(x_row, convert_out=False)
             criterion_value = self.criterion(zpm, zpv)
+            res = - criterion_value[0, 0]
 
-            return - criterion_value[0, 0]
+            # This is because scipy returns only the last value.
+            buffer_x.append(x)
+            buffer_y.append(res)
+
+            return res
 
         crit_jit = gnp.jax.jit(crit_)
 
@@ -156,6 +164,17 @@ class PointwiseCriterion(SequentialPrediction):
         criterion_argmax = gp.kernel.autoselect_parameters(
             init, crit_jit, dcrit, bounds=bounds
         )
+
+        idx_max_history = gnp.asarray(buffer_y).argmin()
+        argmax_history = buffer_x[idx_max_history].numpy()
+
+        if crit_(argmax_history) < crit_(criterion_argmax):
+            print(
+                "The value {} from from the optimizer history was better than the final value {}".format(
+                    crit_(argmax_history), crit_(criterion_argmax)
+                )
+            )
+            criterion_argmax = argmax_history
 
         if gnp.numpy.isnan(criterion_argmax).any():
             return init
