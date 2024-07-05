@@ -11,6 +11,7 @@ import gpmp.num as gnp
 import gpmp as gp
 import sklearn.neighbors
 from .smc import ParticlesSet
+from copy import deepcopy
 
 
 def get_one_nn_predictions(x, y, box, rng, N=100000):
@@ -246,7 +247,55 @@ def remodel(
     info_ret : dict, optional
         Additional information (if info=True).
     """
+    if optim_options["relaxed_init"] in ["flat", "f-values"]:
+        return _remodel(model, xi, zi, R, covparam_bounds, info=info, verbosity=verbosity, optim_options=optim_options)
+    else:
+        assert optim_options["relaxed_init"] == "both"
 
+    _optim_options = deepcopy(optim_options)
+
+    _optim_options["relaxed_init"] = "flat"
+    nll_1 = _remodel(model, xi, zi, R, covparam_bounds, info=True, verbosity=verbosity, optim_options=_optim_options)[3].fun
+    _optim_options["relaxed_init"] = "f-values"
+    nll_2 = _remodel(model, xi, zi, R, covparam_bounds, info=True, verbosity=verbosity, optim_options=_optim_options)[3].fun
+
+    print("NLL1 : {}, NLL2: {}".format(nll_1, nll_2))
+    if nll_1 < nll_2:
+        _optim_options["relaxed_init"] = "flat"
+    return _remodel(model, xi, zi, R, covparam_bounds, info=info, verbosity=verbosity, optim_options=_optim_options)
+
+def _remodel(
+        model, xi, zi, R, covparam_bounds, info=False, verbosity=0, optim_options={},
+):
+    """
+    Perform reGP optimization (REML + relaxation)
+
+    Parameters
+    ----------
+    model : GPModel
+        Gaussian process model.
+    xi : ndarray, shape (n, d)
+        Locations of the observed data points.
+    zi : ndarray, shape (n,)
+        Observed values at the data points.
+    R : list of intervals
+        List of relaxation intervals, each specified as [l_k, u_k].
+    info : bool, optional
+        Whether to return additional information.
+    verbosity : int, optional
+        Verbosity level.
+
+    Returns
+    -------
+    model : GPmp model
+        Updated GPmp Gaussian process model.
+    zi_relaxed : ndarray, shape (n,)
+        Relaxed output data.
+    ind_relaxed : ndarray
+        Indices of the relaxed data points in the input zi array.
+    info_ret : dict, optional
+        Additional information (if info=True).
+    """
     tic = time.time()
 
     # Membership indices and split data
