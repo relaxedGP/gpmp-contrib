@@ -12,6 +12,7 @@ import gpmp as gp
 import sklearn.neighbors
 from .smc import ParticlesSet
 from copy import deepcopy
+from qpsolvers import solve_qp
 
 
 def get_one_nn_predictions(x, y, box, rng, N=100000):
@@ -214,6 +215,32 @@ def make_regp_criterion_with_gradient(model, x0, z0, x1, meanparam_dim):
 
     return crit_jit, dcrit
 
+def profile_relaxed_observations(model, x0, x1, z0, meanparam, covparam, z1_bounds):
+    z0_prior_mean = gnp.to_np(model.mean(x0, meanparam).reshape(-1))
+    centered_z0 = z0 - z0_prior_mean
+
+    z1_prior_mean = gnp.to_np(model.mean(x1, meanparam).reshape(-1))
+
+    K = model.covariance(np.vstack((x1, x0)), np.vstack((x1, x0)), covparam)
+    Kinv = gnp.to_np(gnp.cholesky_inv(K))
+
+    P = Kinv[np.ix_(np.arange(0, x1.shape[0]), np.arange(0, x1.shape[0]))]
+    Q = Kinv[np.ix_(np.arange(0, x1.shape[0]), np.arange(x1.shape[0], K.shape[0]))]
+
+    q = (Q @ centered_z0.reshape(-1, 1)).ravel() - (P @ z1_prior_mean.reshape(-1, 1)).ravel()
+
+    lb = np.array([_bounds[0] for _bounds in z1_bounds])
+    ub = np.array([_bounds[1] for _bounds in z1_bounds])
+
+    x = solve_qp(P, q, lb=lb, ub=ub, solver="quadprog")
+
+    for i in range(x.shape[0]):
+        if x[i] <= z1_bounds[i][0]:
+            x[i] = z1_bounds[i][0]
+        if x[i] >= z1_bounds[i][1]:
+            x[i] = z1_bounds[i][1]
+
+    return x
 
 def remodel(
         model, xi, zi, R, covparam_bounds, info=False, verbosity=0, optim_options={},
