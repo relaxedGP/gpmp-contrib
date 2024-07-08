@@ -274,7 +274,7 @@ def remodel(
     info_ret : dict, optional
         Additional information (if info=True).
     """
-    if optim_options["relaxed_init"] in ["flat", "f-values"]:
+    if optim_options["relaxed_init"] in ["flat", "f-values", "quad_prog"]:
         return _remodel(model, xi, zi, R, covparam_bounds, info=info, verbosity=verbosity, optim_options=optim_options)
     else:
         assert optim_options["relaxed_init"] == "both"
@@ -330,9 +330,9 @@ def _remodel(
     (x0, z0, ind0), (x1, z1, z1_bounds, ind1) = split_data(xi, gnp.to_np(zi), ei, R)
     z1_size = z1.shape[0]
 
-    if optim_options['relaxed_init'] == 'flat':
+    if optim_options['relaxed_init'] in ['flat', 'quad_prog']:
         z1_relaxed_init = np.zeros(z1.shape)
-    
+
         for i in range(z1_relaxed_init.shape[0]):
             Ri = z1_bounds[i]
             if Ri[0] > -np.inf and Ri[1] < np.inf:
@@ -343,14 +343,22 @@ def _remodel(
                 else:
                     z0_min = min([_r[1] for _r in R if _r[1] < Ri[0]])
 
-                z1_relaxed_init[i] = Ri[0] + 2 * (Ri[0] - z0_min)
+                if optim_options['relaxed_init'] == 'quad_prog':
+                    delta = 2 * (Ri[0] - z0_min)
+                    z1_relaxed_init[i] = np.where(z1[i] <= Ri[0] + delta, z1[i], Ri[0] + delta)
+                else:
+                    z1_relaxed_init[i] = Ri[0] + 2 * (Ri[0] - z0_min)
             elif Ri[0] == -np.inf and Ri[1] < np.inf:
                 if len(R) == 1:
                     z0_max = z0.max()
                 else:
                     z0_max = max([_r[0] for _r in R if _r[0] > Ri[1]])
 
-                z1_relaxed_init[i] = Ri[1] + 2 * (Ri[1] - z0_max)
+                if optim_options['relaxed_init'] == 'quad_prog':
+                    delta = 2 * (Ri[1] - z0_max)
+                    z1_relaxed_init[i] = np.where(z1[i] >= Ri[1] + delta, z1[i], Ri[1] + delta)
+                else:
+                    z1_relaxed_init[i] = Ri[1] + 2 * (Ri[1] - z0_max)
             else:
                 raise RuntimeError
     elif optim_options['relaxed_init'] == 'f-values':
@@ -373,6 +381,11 @@ def _remodel(
 
     meanparam_dim = meanparam0.shape[0]
     meanparam_bounds = [(-gnp.inf, gnp.inf)] * meanparam_dim
+
+    # Optimize relaxed observations
+    if optim_options['relaxed_init'] == 'quad_prog':
+        if z1_relaxed_init.shape[0] > 0:
+            z1_relaxed_init = profile_relaxed_observations(model, x0, x1, z0, meanparam0, covparam0, z1_bounds)
 
     # Initial parameter vector and bounds
     p0 = np.concatenate((meanparam0.reshape(1), covparam0, z1_relaxed_init))
