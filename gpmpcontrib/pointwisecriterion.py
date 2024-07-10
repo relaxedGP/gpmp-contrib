@@ -8,6 +8,7 @@ import gpmp as gp
 import gpmpcontrib.samplingcriteria as sampcrit
 from gpmpcontrib import SequentialPrediction
 from gpmpcontrib import SMC
+from gpmpcontrib.smc import ParamSError
 import collections
 
 
@@ -84,30 +85,33 @@ class PointwiseCriterion(SequentialPrediction):
 
         logpdf_parameterized_function, logpdf_initial_param, target_logpdf_param = self.logpdf_parameterized()
 
-        if method == "step_simple":
-            self.smc.step(
-                logpdf_parameterized_function=logpdf_parameterized_function,
-                logpdf_param=target_logpdf_param,
-            )
-        elif method == "restart":
-            self.smc.restart(
-                logpdf_parameterized_function=logpdf_parameterized_function,
-                logpdf_initial_param=logpdf_initial_param,
-                target_logpdf_param=target_logpdf_param,
-                p0=0.8,
-                debug=False
-            )
-        elif method == "step_with_possible_restart":
-            self.smc.step_with_possible_restart(
-                logpdf_parameterized_function=logpdf_parameterized_function,
-                logpdf_initial_param=logpdf_initial_param,
-                target_logpdf_param=target_logpdf_param,
-                min_ess_ratio=0.6,
-                p0=0.6,
-                debug=False
-            )
-        else:
-            raise ValueError(method)
+        try:
+            if method == "step_simple":
+                self.smc.step(
+                    logpdf_parameterized_function=logpdf_parameterized_function,
+                    logpdf_param=target_logpdf_param,
+                )
+            elif method == "restart":
+                self.smc.restart(
+                    logpdf_parameterized_function=logpdf_parameterized_function,
+                    logpdf_initial_param=logpdf_initial_param,
+                    target_logpdf_param=target_logpdf_param,
+                    p0=0.8,
+                    debug=False
+                )
+            elif method == "step_with_possible_restart":
+                self.smc.step_with_possible_restart(
+                    logpdf_parameterized_function=logpdf_parameterized_function,
+                    logpdf_initial_param=logpdf_initial_param,
+                    target_logpdf_param=target_logpdf_param,
+                    min_ess_ratio=0.6,
+                    p0=0.6,
+                    debug=False
+                )
+            else:
+                raise ValueError(method)
+        except ParamSError as e:
+            print(e)
 
     def set_initial_design(self, xi, update_model=True, update_search_space=True):
         zi = self.computer_experiments_problem.eval(xi)
