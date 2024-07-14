@@ -20,7 +20,7 @@ dependencies = [
     "matplotlib",
     "gpmp>=0.9.10",
     "scikit-learn",
-    "qpsolvers"
+    "qpsolvers[quadprog]"
 ]
 requires-python = ">=3.6"
 
