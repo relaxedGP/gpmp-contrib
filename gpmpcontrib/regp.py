@@ -341,18 +341,19 @@ def _remodel(
                 if len(R) == 1:
                     z0_min = z0.min()
                 else:
-                    z0_min = min([_r[1] for _r in R if _r[1] < Ri[0]])
+                    z0_min = max([_r[1] for _r in R if _r[1] < Ri[0]])
 
                 if optim_options['relaxed_init'] == 'quad_prog':
                     delta = 2 * (Ri[0] - z0_min)
                     z1_relaxed_init[i] = np.where(z1[i] <= Ri[0] + delta, z1[i], Ri[0] + delta)
                 else:
                     z1_relaxed_init[i] = Ri[0] + 2 * (Ri[0] - z0_min)
+
             elif Ri[0] == -np.inf and Ri[1] < np.inf:
                 if len(R) == 1:
                     z0_max = z0.max()
                 else:
-                    z0_max = max([_r[0] for _r in R if _r[0] > Ri[1]])
+                    z0_max = min([_r[0] for _r in R if _r[0] > Ri[1]])
 
                 if optim_options['relaxed_init'] == 'quad_prog':
                     delta = 2 * (Ri[1] - z0_max)
