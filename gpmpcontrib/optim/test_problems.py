@@ -307,12 +307,12 @@ g9 = ComputerExperiment(
     single_constraint=_g9_dict["single_constraint"]
 )
 
-# ===== G10 =====
+# ===== G10base =====
 
-def _g10_objective(x):
+def _g10base_objective(x):
     return x[:, 0] + x[:, 1] + x[:, 2]
 
-def _g10_constraints(x):
+def _g10base_constraints(x):
     c1 = -1 + 0.0025 * (x[:, 3] + x[:, 5])
     c2 = -1 + 0.0025 * (-x[:, 3] + x[:, 4] + x[:, 6])
     c3 = -1 + 0.01 * (-x[:, 4] + x[:, 7])
@@ -321,50 +321,50 @@ def _g10_constraints(x):
     c6 = x[:, 2] * x[:, 4] - x[:, 2] * x[:, 7] - 2500 * x[:, 4] + 1250000
     return np.column_stack((c1, c2, c3, c4, c5, c6))
 
-_g10_dict = {
+_g10base_dict = {
     "input_dim": 8,
     "input_box": [[100, 1000, 1000, 10, 10, 10, 10, 10], [10000] * 3 + [1000] * 5],
-    "single_objective": _g10_objective,
-    "single_constraint": {"function": _g10_constraints, "output_dim": 6, "bounds": [[-np.inf, 0]] * 6}
+    "single_objective": _g10base_objective,
+    "single_constraint": {"function": _g10base_constraints, "output_dim": 6, "bounds": [[-np.inf, 0]] * 6}
 }
 
-g10 = ComputerExperiment(
-    _g10_dict["input_dim"],
-    _g10_dict["input_box"],
-    single_objective=_g10_dict["single_objective"],
-    single_constraint=_g10_dict["single_constraint"]
+g10base = ComputerExperiment(
+    _g10base_dict["input_dim"],
+    _g10base_dict["input_box"],
+    single_objective=_g10base_dict["single_objective"],
+    single_constraint=_g10base_dict["single_constraint"]
 )
 
-# ===== G10MOD =====
-def _g10mod_constraints(x):
-    raw_constraints = _g10_constraints(x)
+# ===== G10RR =====
+def _g10RR_constraints(x):
+    raw_constraints = _g10base_constraints(x)
     raw_constraints[:, [3, 4, 5]] = plog(raw_constraints[:, [3, 4, 5]])
     return raw_constraints
 
-_g10mod_dict = _g10_dict.copy()
-_g10mod_dict["single_constraint"] = {"function": _g10mod_constraints, "output_dim": 6, "bounds": [[-np.inf, 0]] * 6}
+_g10RR_dict = _g10base_dict.copy()
+_g10RR_dict["single_constraint"] = {"function": _g10RR_constraints, "output_dim": 6, "bounds": [[-np.inf, 0]] * 6}
 
-g10mod = ComputerExperiment(
-    _g10mod_dict["input_dim"],
-    _g10mod_dict["input_box"],
-    single_objective=_g10mod_dict["single_objective"],
-    single_constraint=_g10mod_dict["single_constraint"]
+g10RR = ComputerExperiment(
+    _g10RR_dict["input_dim"],
+    _g10RR_dict["input_box"],
+    single_objective=_g10RR_dict["single_objective"],
+    single_constraint=_g10RR_dict["single_constraint"]
 )
 
-# ===== G10MODMOD =====
-def _g10modmod_constraints(x):
-    raw_constraints = _g10mod_constraints(x)
+# ===== G10RRMOD =====
+def _g10RRmod_constraints(x):
+    raw_constraints = _g10RR_constraints(x)
     raw_constraints[:, [3, 4, 5]] = raw_constraints[:, [3, 4, 5]] ** 7
     return raw_constraints
 
-_g10modmod_dict = _g10_dict.copy()
-_g10modmod_dict["single_constraint"] = {"function": _g10modmod_constraints, "output_dim": 6, "bounds": [[-np.inf, 0]] * 6}
+_g10RRmod_dict = _g10base_dict.copy()
+_g10RRmod_dict["single_constraint"] = {"function": _g10RRmod_constraints, "output_dim": 6, "bounds": [[-np.inf, 0]] * 6}
 
-g10modmod = ComputerExperiment(
-    _g10modmod_dict["input_dim"],
-    _g10modmod_dict["input_box"],
-    single_objective=_g10modmod_dict["single_objective"],
-    single_constraint=_g10modmod_dict["single_constraint"]
+g10RRmod = ComputerExperiment(
+    _g10RRmod_dict["input_dim"],
+    _g10RRmod_dict["input_box"],
+    single_objective=_g10RRmod_dict["single_objective"],
+    single_constraint=_g10RRmod_dict["single_constraint"]
 )
 
 # ===== G13MOD =====

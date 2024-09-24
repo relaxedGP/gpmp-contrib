@@ -3,12 +3,10 @@ from gpmpcontrib.computerexperiment import ComputerExperiment
 import gpmpcontrib.optim.test_problems as optim_problems
 
 def __getattr__(name):
-    if name == "g10c6":
-        return g10c6
-    elif name == "g10c6mod":
-        return g10c6mod
-    elif name == "g10c6modmod":
-        return g10c6modmod
+    if name == "c6":
+        return c6
+    elif name == "c67":
+        return c67
 
     name_split = name.split("-")
     assert len(name_split) == 2, name
@@ -29,47 +27,32 @@ def __getattr__(name):
 
     return parametrized_problem(t)
 
+# ===== C6 =====
+_c6_constraints = lambda x: optim_problems._g10RR_constraints(x)[:, 5]
 
-# ===== G10C6 =====
-_g10c6_constraints = lambda x: optim_problems._g10_constraints(x)[:, 5]
+_c6_dict = optim_problems._g10RR_dict.copy()
+_c6_dict["single_objective"] = None
+_c6_dict["single_constraint"] = {"function": _c6_constraints, "output_dim": 1, "bounds": [[-np.inf, 0]]}
 
-_g10c6_dict = optim_problems._g10_dict.copy()
-_g10c6_dict["single_objective"] = None
-_g10c6_dict["single_constraint"] = {"function": _g10c6_constraints, "output_dim": 1, "bounds": [[-np.inf, 0]]}
-
-g10c6 = ComputerExperiment(
-    _g10c6_dict["input_dim"],
-    _g10c6_dict["input_box"],
-    single_objective=_g10c6_dict["single_objective"],
-    single_constraint=_g10c6_dict["single_constraint"]
+c6 = ComputerExperiment(
+    _c6_dict["input_dim"],
+    _c6_dict["input_box"],
+    single_objective=_c6_dict["single_objective"],
+    single_constraint=_c6_dict["single_constraint"]
 )
 
-# ===== G10C6MOD =====
-_g10c6mod_constraints = lambda x: optim_problems._g10mod_constraints(x)[:, 5]
+# ===== C67 =====
+_c67_constraints = lambda x: optim_problems._g10RRmod_constraints(x)[:, 5]
 
-_g10c6mod_dict = optim_problems._g10mod_dict.copy()
-_g10c6mod_dict["single_objective"] = None
-_g10c6mod_dict["single_constraint"] = {"function": _g10c6mod_constraints, "output_dim": 1, "bounds": [[-np.inf, 0]]}
+_c67_dict = optim_problems._g10RRmod_dict.copy()
+_c67_dict["single_objective"] = None
+_c67_dict["single_constraint"] = {"function": _c67_constraints, "output_dim": 1, "bounds": [[-np.inf, 0]]}
 
-g10c6mod = ComputerExperiment(
-    _g10c6mod_dict["input_dim"],
-    _g10c6mod_dict["input_box"],
-    single_objective=_g10c6mod_dict["single_objective"],
-    single_constraint=_g10c6mod_dict["single_constraint"]
-)
-
-# ===== G10C6MODMOD =====
-_g10c6modmod_constraints = lambda x: optim_problems._g10modmod_constraints(x)[:, 5]
-
-_g10c6modmod_dict = optim_problems._g10modmod_dict.copy()
-_g10c6modmod_dict["single_objective"] = None
-_g10c6modmod_dict["single_constraint"] = {"function": _g10c6modmod_constraints, "output_dim": 1, "bounds": [[-np.inf, 0]]}
-
-g10c6modmod = ComputerExperiment(
-    _g10c6modmod_dict["input_dim"],
-    _g10c6modmod_dict["input_box"],
-    single_objective=_g10c6modmod_dict["single_objective"],
-    single_constraint=_g10c6modmod_dict["single_constraint"]
+c67 = ComputerExperiment(
+    _c67_dict["input_dim"],
+    _c67_dict["input_box"],
+    single_objective=_c67_dict["single_objective"],
+    single_constraint=_c67_dict["single_constraint"]
 )
 
 
