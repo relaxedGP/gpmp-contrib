@@ -243,7 +243,7 @@ def profile_relaxed_observations(model, x0, x1, z0, meanparam, covparam, z1_boun
     return x
 
 def remodel(
-        model, xi, zi, R, covparam_bounds, info=False, verbosity=0, optim_options={},
+        model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, info=False, verbosity=0, optim_options={},
 ):
     """
     Perform reGP optimization (REML + relaxation)
@@ -258,6 +258,10 @@ def remodel(
         Observed values at the data points.
     R : list of intervals
         List of relaxation intervals, each specified as [l_k, u_k].
+    covparam_bounds : ndarray
+        Bounds for covariance parameters.
+    initial_params_guess_procedure : callable
+        Methods for an initial guess of the parameters of the mean function and the kernel
     info : bool, optional
         Whether to return additional information.
     verbosity : int, optional
@@ -275,24 +279,28 @@ def remodel(
         Additional information (if info=True).
     """
     if optim_options["relaxed_init"] in ["flat", "f-values", "quad_prog"]:
-        return _remodel(model, xi, zi, R, covparam_bounds, info=info, verbosity=verbosity, optim_options=optim_options)
+        return _remodel(model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, info=info,
+                        verbosity=verbosity, optim_options=optim_options)
     else:
         assert optim_options["relaxed_init"] == "both"
 
     _optim_options = deepcopy(optim_options)
 
     _optim_options["relaxed_init"] = "flat"
-    nll_1 = _remodel(model, xi, zi, R, covparam_bounds, info=True, verbosity=verbosity, optim_options=_optim_options)[3].fun
+    nll_1 = _remodel(model, xi, zi, R, covparam_bounds, initial_params_guess_procedure,
+                     info=True, verbosity=verbosity, optim_options=_optim_options)[3].fun
     _optim_options["relaxed_init"] = "f-values"
-    nll_2 = _remodel(model, xi, zi, R, covparam_bounds, info=True, verbosity=verbosity, optim_options=_optim_options)[3].fun
+    nll_2 = _remodel(model, xi, zi, R, covparam_bounds, initial_params_guess_procedure,
+                     info=True, verbosity=verbosity, optim_options=_optim_options)[3].fun
 
     print("NLL1 : {}, NLL2: {}".format(nll_1, nll_2))
     if nll_1 < nll_2:
         _optim_options["relaxed_init"] = "flat"
-    return _remodel(model, xi, zi, R, covparam_bounds, info=info, verbosity=verbosity, optim_options=_optim_options)
+    return _remodel(model, xi, zi, R, covparam_bounds, initial_params_guess_procedure,
+                    info=info, verbosity=verbosity, optim_options=_optim_options)
 
 def _remodel(
-        model, xi, zi, R, covparam_bounds, info=False, verbosity=0, optim_options={},
+        model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, info=False, verbosity=0, optim_options={},
 ):
     """
     Perform reGP optimization (REML + relaxation)
@@ -307,6 +315,10 @@ def _remodel(
         Observed values at the data points.
     R : list of intervals
         List of relaxation intervals, each specified as [l_k, u_k].
+    covparam_bounds : ndarray
+        Bounds for covariance parameters.
+    initial_params_guess_procedure : callable
+        Methods for an initial guess of the parameters of the mean function and the kernel
     info : bool, optional
         Whether to return additional information.
     verbosity : int, optional
@@ -370,7 +382,7 @@ def _remodel(
         )
 
     # Initial guess for the parameters
-    meanparam0, covparam0 = gp.kernel.anisotropic_parameters_initial_guess_constant_mean(
+    meanparam0, covparam0 = initial_params_guess_procedure(
         model,
         np.vstack((x0, x1)),
         np.concatenate((z0, z1_relaxed_init))
@@ -499,7 +511,7 @@ def predict(model, xi, zi, xt, R, covparam0=None, info=False, verbosity=0):
 
     return zi_relaxed, (zpm, zpv), model, info_ret
 
-def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, optim_options):
+def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, initial_params_guess_procedure, optim_options):
     """
     Choose threshold for reGP with relaxation above t0
 
@@ -521,6 +533,8 @@ def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, optim_options):
         Relaxation range candidates.
     covparam_bounds : ndarray
         Bounds for covariance parameters.
+    initial_params_guess_procedure : callable
+        Methods for an initial guess of the parameters of the mean function and the kernel
     optim_options : dict
         Options passed to remodel
 
@@ -533,7 +547,8 @@ def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, optim_options):
 
     J = gnp.numpy.zeros(q)
     for i in range(q):
-        model, zi_relaxed, _ = remodel(model, xi, zi, R_list[i], covparam_bounds, optim_options=optim_options)
+        model, zi_relaxed, _ = remodel(model, xi, zi, R_list[i], covparam_bounds, initial_params_guess_procedure,
+                                       optim_options=optim_options)
         zloom, zloov, _ = model.loo(xi, zi_relaxed)
         tCRPS = gp.misc.scoringrules.tcrps_gaussian(zloom, gnp.sqrt(zloov), zi_relaxed, a=G[0], b=G[1])
         J[i] = gnp.sum(tCRPS)
