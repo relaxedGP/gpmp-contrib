@@ -2,6 +2,7 @@ from .computerexperiment import ComputerExperiment
 from .models import Model_MaternpREML
 from .models import Model_ConstantMeanMaternpML
 from .models import Model_ConstantMeanMaternp_reGP
+from .models import NoisyModel_ConstantMeanMaternpML
 from .smc import SMC
 from .sequentialprediction import SequentialPrediction
 from .pointwisecriterion import PointwiseCriterion
