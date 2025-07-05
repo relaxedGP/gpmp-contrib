@@ -858,9 +858,9 @@ class Model_ConstantMeanMaternpML(Model):
 
         p = param["p"]
 
-        def maternp_covariance(x, y, covparam, pairwise=False):
+        def maternp_covariance(x, y, covparam, pairwise=False, use_noise=True):
             # Implementation of the Matérn covariance function using p and other parameters
-            return gp.kernel.maternp_covariance(x, y, p, covparam, pairwise)
+            return gp.kernel.maternp_covariance(x, y, p, covparam, pairwise=pairwise, use_noise=use_noise)
 
         return maternp_covariance
 
@@ -934,11 +934,11 @@ class NoisyModel_ConstantMeanMaternpML(Model_ConstantMeanMaternpML):
 
         p = param["p"]
 
-        def maternp_covariance(x, y, covparam, pairwise=False):
+        def fixed_p_noisy_maternp_covariance(x, y, covparam, pairwise=False, use_noise=True):
             # Implementation of the Matérn covariance function using p and other parameters
-            return noisy_maternp_covariance(x, y, p, covparam, pairwise)
+            return noisy_maternp_covariance(x, y, p, covparam, pairwise=pairwise, use_noise=use_noise)
 
-        return maternp_covariance
+        return fixed_p_noisy_maternp_covariance
 
     def build_parameters_initial_guess_procedure(self, output_idx: int, **build_param):
         def initial_guess_procedure(model, xi, zi, max_scaling=10.0):
@@ -1045,7 +1045,7 @@ class NoisyModel_ConstantMeanMaternpML(Model_ConstantMeanMaternpML):
         return covparam_bounds
 
 
-def noisy_maternp_covariance_ii_or_tt(x, p, param, pairwise=False):
+def noisy_maternp_covariance_ii_or_tt(x, p, param, use_noise, pairwise=False):
     """Covariance between observations or predictands at x.
 
     The covariance matrix is computed using the Matérn kernel with half-integer regularity:
@@ -1065,6 +1065,8 @@ def noisy_maternp_covariance_ii_or_tt(x, p, param, pairwise=False):
         Half-integer regularity nu = p + 1/2.
     param : gnp.array, shape (1 + d,)
         sigma2 and range parameters.
+    use_noise : bool
+        add the noise to the kernel?
     pairwise : bool, optional
         Whether to return a covariance matrix k(x_i, x_j),
         for i and j = 1 ... nx, if pairwise is False, or a covariance
@@ -1082,10 +1084,14 @@ def noisy_maternp_covariance_ii_or_tt(x, p, param, pairwise=False):
     if pairwise:
         # return a vector of covariances
         K = sigma2 * gnp.ones((x.shape[0],))  # nx x 0
+        if use_noise:
+            K = K + noise_variance
     else:
         # return a covariance matrix
         K = gnp.scaled_distance(loginvrho, x, x)  # nx x nx
-        K = sigma2 * gp.kernel.maternp_kernel(p, K) + noise_variance * gnp.eye(K.shape[0])
+        K = sigma2 * gp.kernel.maternp_kernel(p, K)
+        if use_noise:
+            K = K + noise_variance * gnp.eye(K.shape[0])
 
     return K
 
@@ -1126,7 +1132,7 @@ def noisy_maternp_covariance_it(x, y, p, param, pairwise=False):
 
     return K
 
-def noisy_maternp_covariance(x, y, p, param, pairwise=False):
+def noisy_maternp_covariance(x, y, p, param, pairwise=False, use_noise=True):
     """Matérn covariance function with half-integer regularity nu = p + 1/2.
 
     The kernel is defined in terms of the Euclidean distance, between
@@ -1151,6 +1157,8 @@ def noisy_maternp_covariance(x, y, p, param, pairwise=False):
         If True, return a covariance vector k(x_i, y_i). If False,
         return a covariance matrix k(x_i, y_j) for i in the range 1 to nx
         and j in the range 1 to ny. Default is False.
+    use_noise : bool
+        add the noise to the kernel?
 
     Returns
     -------
@@ -1163,8 +1171,9 @@ def noisy_maternp_covariance(x, y, p, param, pairwise=False):
     (only one length scale parameter).
     """
     if y is x or y is None:
-        return noisy_maternp_covariance_ii_or_tt(x, p, param, pairwise)
+        return noisy_maternp_covariance_ii_or_tt(x, p, param, use_noise, pairwise)
     else:
+        assert not use_noise
         return noisy_maternp_covariance_it(x, y, p, param, pairwise)
 
 

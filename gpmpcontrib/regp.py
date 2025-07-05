@@ -221,7 +221,7 @@ def profile_relaxed_observations(model, x0, x1, z0, meanparam, covparam, z1_boun
 
     z1_prior_mean = gnp.to_np(model.mean(x1, meanparam).reshape(-1))
 
-    K = model.covariance(np.vstack((x1, x0)), np.vstack((x1, x0)), covparam)
+    K = model.covariance(np.vstack((x1, x0)), None, covparam)
     Kinv = gnp.to_np(gnp.cholesky_inv(K))
 
     P = Kinv[np.ix_(np.arange(0, x1.shape[0]), np.arange(0, x1.shape[0]))]
