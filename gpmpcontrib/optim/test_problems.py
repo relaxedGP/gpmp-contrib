@@ -687,6 +687,25 @@ goldstein_price_log = ComputerExperiment(
     single_objective=_goldstein_price_log_dict["single_objective"],
 )
 
+#  ==== Noisy-GoldsteinPrice function ====
+
+def _noisy_goldstein_price_objective(x, noise_variance):
+    # Placeholder function for GoldsteinPrice
+    obj_gp = _goldsteinprice_objective(x).reshape(-1, 1)
+    obj_gp = obj_gp + np.random.normal(size=obj_gp.shape, scale=np.sqrt(noise_variance))
+    return obj_gp
+
+_noisy_goldstein_price_dict = {
+    "input_dim": 2,
+    "input_box": [[-2, -2], [2, 2]],
+}
+
+noisy_goldstein_price = lambda noise_variance: ComputerExperiment(
+    _noisy_goldstein_price_dict["input_dim"],
+    _noisy_goldstein_price_dict["input_box"],
+    single_objective=lambda x: _noisy_goldstein_price_objective(x, noise_variance),
+)
+
 # ===== Shekel Problems ======
 # See https://www.sfu.ca/~ssurjano/shekel.html
 #
