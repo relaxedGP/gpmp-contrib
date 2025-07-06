@@ -234,6 +234,10 @@ def profile_relaxed_observations(model, x0, x1, z0, meanparam, covparam, z1_boun
 
     x = solve_qp(P, q, lb=lb, ub=ub, solver="quadprog")
 
+    # TODO:() Improve robustness
+    if x is None:
+        return x
+
     for i in range(x.shape[0]):
         if x[i] <= z1_bounds[i][0]:
             x[i] = z1_bounds[i][0]
@@ -398,7 +402,9 @@ def _remodel(
     # Optimize relaxed observations
     if optim_options['relaxed_init'] == 'quad_prog':
         if z1_relaxed_init.shape[0] > 0:
-            z1_relaxed_init = profile_relaxed_observations(model, x0, x1, z0, meanparam0, covparam0, z1_bounds)
+            profile_z1_relaxed_init = profile_relaxed_observations(model, x0, x1, z0, meanparam0, covparam0, z1_bounds)
+            if profile_z1_relaxed_init is not None:
+                z1_relaxed_init = profile_z1_relaxed_init
 
     # Initial parameter vector and bounds
     p0 = np.concatenate((meanparam0.reshape(1), covparam0, z1_relaxed_init))
