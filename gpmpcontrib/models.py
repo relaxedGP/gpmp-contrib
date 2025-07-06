@@ -944,30 +944,15 @@ class NoisyModel_ConstantMeanMaternpML(Model_ConstantMeanMaternpML):
         return noisy_initial_guess_procedure
 
     def get_covparam_bounds(self, xi, zi):
+        covparam_bounds = super().get_covparam_bounds(xi, zi)
+
         log_relative_amplitude = 60 * gnp.log(10)
-        covparam_bounds = [
+        covparam_bounds.append(
             (
                 gnp.log(zi.var()) - log_relative_amplitude,
                 gnp.log(zi.var()) + log_relative_amplitude
             )
-        ]
-
-        # FIXME: Calibrated for a Matérn covariance function with \nu = 5/2.
-        delta_min = gnp.sqrt(xi.shape[1]) / 5
-        delta_max = 10**(-5)
-        for i in range(xi.shape[1]):
-            dists = gnp.numpy.array([gnp.numpy.abs(xi[j, i] - xi[k, i]) for k in range(xi.shape[0]) for j in range(xi.shape[0])])
-            min_dist = dists[dists > 0].min()
-            max_dist = dists.max()
-
-            upper_bound_min = -gnp.log(min_dist * delta_min)
-            upper_bound_max = -gnp.log(max_dist * delta_max)
-
-            upper_bound = min(upper_bound_min, upper_bound_max)
-
-            covparam_bounds = covparam_bounds + [(-gnp.inf, upper_bound)]
-
-        covparam_bounds = covparam_bounds + [(-gnp.inf, gnp.inf)]
+        )
 
         return covparam_bounds
 
