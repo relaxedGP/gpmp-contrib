@@ -532,7 +532,7 @@ class SMC:
         # Subset-simulation message termination
         message = None
 
-        emergency_error_counter_max = 5
+        emergency_error_counter_max = float("Inf")
 
         stopping_tol = 0.1
         max_criterion_xi = func(xi).numpy().max()
