@@ -689,10 +689,10 @@ goldstein_price_log = ComputerExperiment(
 
 #  ==== Noisy-GoldsteinPrice function ====
 
-def _noisy_goldstein_price_objective(x, noise_variance):
+def _noisy_goldstein_price_objective(x, noise_variance, rng):
     # Placeholder function for GoldsteinPrice
     obj_gp = _goldsteinprice_objective(x).reshape(-1, 1)
-    obj_gp = obj_gp + np.random.normal(size=obj_gp.shape, scale=np.sqrt(noise_variance))
+    obj_gp = obj_gp + rng.normal(size=obj_gp.shape, scale=np.sqrt(noise_variance))
     return obj_gp
 
 _noisy_goldstein_price_dict = {
@@ -700,18 +700,18 @@ _noisy_goldstein_price_dict = {
     "input_box": [[-2, -2], [2, 2]],
 }
 
-noisy_goldstein_price = lambda noise_variance: ComputerExperiment(
+noisy_goldstein_price = lambda noise_variance, rng: ComputerExperiment(
     _noisy_goldstein_price_dict["input_dim"],
     _noisy_goldstein_price_dict["input_box"],
-    single_objective=lambda x: _noisy_goldstein_price_objective(x, noise_variance),
+    single_objective=lambda x: _noisy_goldstein_price_objective(x, noise_variance, rng),
 )
 
 #  ==== Noisy-Log-GoldsteinPrice function ====
 
-def _noisy_goldstein_price_log_objective(x, noise_variance):
+def _noisy_goldstein_price_log_objective(x, noise_variance, rng):
     # Placeholder function for GoldsteinPrice
     obj_gp = _goldstein_price_log_objective(x).reshape(-1, 1)
-    obj_gp = obj_gp + np.random.normal(size=obj_gp.shape, scale=np.sqrt(noise_variance))
+    obj_gp = obj_gp + rng.normal(size=obj_gp.shape, scale=np.sqrt(noise_variance))
     return obj_gp
 
 _noisy_goldstein_price_log_dict = {
@@ -719,10 +719,10 @@ _noisy_goldstein_price_log_dict = {
     "input_box": [[-2, -2], [2, 2]],
 }
 
-noisy_goldstein_price_log = lambda noise_variance: ComputerExperiment(
+noisy_goldstein_price_log = lambda noise_variance, rng: ComputerExperiment(
     _noisy_goldstein_price_log_dict["input_dim"],
     _noisy_goldstein_price_log_dict["input_box"],
-    single_objective=lambda x: _noisy_goldstein_price_log_objective(x, noise_variance),
+    single_objective=lambda x: _noisy_goldstein_price_log_objective(x, noise_variance, rng),
 )
 
 # ===== Shekel Problems ======
