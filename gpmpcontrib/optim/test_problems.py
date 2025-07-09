@@ -725,6 +725,25 @@ noisy_goldstein_price_log = lambda noise_variance, rng: ComputerExperiment(
     single_objective=lambda x: _noisy_goldstein_price_log_objective(x, noise_variance, rng),
 )
 
+#  ==== Beale function ====
+
+def _noisy_beale_objective(x, noise_variance, rng):
+    # Placeholder function for Noisy Beale
+    obj_beale = _beale_objective(x).reshape(-1, 1)
+    obj_beale = obj_beale + rng.normal(size=obj_beale.shape, scale=np.sqrt(noise_variance))
+    return obj_beale
+
+_noisy_beale_dict = {
+    "input_dim": 2,
+    "input_box": [[-4.5, -4.5], [4.5, 4.5]],
+}
+
+noisy_beale = lambda noise_variance, rng: ComputerExperiment(
+    _noisy_beale_dict["input_dim"],
+    _noisy_beale_dict["input_box"],
+    single_objective=lambda x: _noisy_beale_objective(x, noise_variance, rng),
+)
+
 # ===== Shekel Problems ======
 # See https://www.sfu.ca/~ssurjano/shekel.html
 #
