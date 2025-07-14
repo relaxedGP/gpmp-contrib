@@ -1304,6 +1304,18 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
     ):
         raise NotImplementedError
 
+    def get_G_and_R_list(self, i, xi_, zi_):
+        """
+        Call to `self.threshold_strategies[i]`.
+        """
+        G, R_list = self.threshold_strategies[i](
+            gnp.to_np(xi_),
+            gnp.to_np(zi_[:, i]),
+            gnp.to_np(zi_[:, i].min()),
+            gnp.to_np(zi_[:, i].max())
+        )
+        return G, R_list
+
     def select_params(self, xi, zi, force_param_initial_guess=True):
         """Parameter selection"""
 
@@ -1326,7 +1338,7 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
 
             covparam_bounds = self.get_covparam_bounds(gnp.to_np(xi_), gnp.to_np(zi_[:, i]))
 
-            G, R_list = self.threshold_strategies[i](gnp.to_np(xi_), gnp.to_np(zi_[:, i]))
+            G, R_list = self.get_G_and_R_list(i, xi_, zi_)
 
             print("Build reGP model for G = {}".format(G))
 
@@ -1393,6 +1405,10 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
 class NoisyModel_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternp_reGP):
     """Noisy reGP model with a constant mean and a Matern covariance function."""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.smoothed_data = None
+
     def build_parameters_initial_guess_procedure(self, output_idx: int, **build_param):
         return noisy_initial_guess_procedure
 
@@ -1440,6 +1456,32 @@ class NoisyModel_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternp_reGP):
         )
 
         return covparam_bounds
+
+    def select_params(self, xi, zi, force_param_initial_guess=True):
+        super().select_params(xi, zi, force_param_initial_guess=force_param_initial_guess)
+        self.smoothed_data = (
+            xi,
+            self.predict(xi, zi, xi, convert_out=False)[0]
+        )
+
+    def get_G_and_R_list(self, i, xi_, zi_):
+        """
+        Call to `self.threshold_strategies[i]`. Do not call with the noisy values if there is noise.
+        """
+        if self.smoothed_data is not None:
+            xi_smoothed, zi_smoothed = self.smoothed_data
+        else:
+            xi_smoothed = xi_
+            zi_smoothed = zi_
+
+        G, R_list = self.threshold_strategies[i](
+            gnp.to_np(xi_smoothed),
+            gnp.to_np(zi_smoothed[:, i]),
+            gnp.to_np(zi_[:, i].min()),
+            gnp.to_np(zi_[:, i].max())
+        )
+        return G, R_list
+
 
 # ==============================================================================
 # Mean Functions Section

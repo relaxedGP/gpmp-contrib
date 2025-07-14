@@ -43,18 +43,19 @@ def one_sided(t0, min_value, max_value, n_ranges):
     return G, R_list
 
 optim_strategy = {
-    "Constant": lambda l, rng, box, options: lambda xi, zi: one_sided(
-        np.quantile(zi[:options["n_init"]], l), zi.min(), zi.max(), options["n_ranges"]
+    "Constant": lambda l, rng, box, options: lambda xi, zi, zi_min, zi_max: one_sided(
+        np.quantile(zi[:options["n_init"]], l), zi_min, zi_max, options["n_ranges"]
     ),
-    "Concentration": lambda l, rng, box, options: lambda xi, zi: one_sided(
-        np.quantile(zi, l), zi.min(), zi.max(), options["n_ranges"]
+    "Concentration": lambda l, rng, box, options: lambda xi, zi, zi_min, zi_max: one_sided(
+        np.quantile(zi, l), zi_min, zi_max, options["n_ranges"]
     ),
-    "Spatial": lambda l, rng, box, options: lambda xi, zi: one_sided(
-        get_rectified_spatial_quantile(xi, zi, box, rng, l), zi.min(), zi.max(), options["n_ranges"]
+    "Spatial": lambda l, rng, box, options: lambda xi, zi, zi_min, zi_max: one_sided(
+        get_rectified_spatial_quantile(xi, zi, box, rng, l), zi_min, zi_max, options["n_ranges"]
     ),
 }
 
 def two_sided(t, d, xi, zi, n_ranges):
+    raise NotImplementedError("Check.")
     assert d > 0, (t, d, zi)
 
     G = [float(t - d), float(t + d)]
