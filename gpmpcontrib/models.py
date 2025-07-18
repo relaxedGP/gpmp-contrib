@@ -1351,6 +1351,7 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
                 R_list,
                 covparam_bounds,
                 self.models[i]["parameters_initial_guess_procedure"],
+                regp.make_regp_criterion_with_gradient,
                 optim_options=self.crit_optim_options,
             )
 
@@ -1362,6 +1363,7 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
                 R,
                 covparam_bounds,
                 self.models[i]["parameters_initial_guess_procedure"],
+                regp.make_regp_criterion_with_gradient,
                 True,
                 optim_options=self.crit_optim_options,
             )
