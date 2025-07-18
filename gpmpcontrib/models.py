@@ -1525,7 +1525,7 @@ class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp
             (_x0, _z0, _ind0), _ = regp.split_data(xi_, gnp.to_np(zi_[:, i]), _ei, _largest_R)
 
             print("Estimate noise with a GP in G = {}".format(G))
-            self.models[i]["model"], _, _, info_ret = regp.remodel(
+            self.models[i]["model"], _, _, info_ret_gp = regp.remodel(
                 model["model"],
                 _x0,
                 gnp.asarray(_z0),
