@@ -1485,6 +1485,181 @@ class NoisyModel_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternp_reGP):
         return G, R_list
 
 
+
+# ==============================================================================
+# Two-stage noisy ModelMaternp reGP Class
+# ==============================================================================
+
+
+class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp_reGP):
+    """Two-stage noisy reGP model with a constant mean and a Matern covariance function."""
+
+
+    def select_params(self, xi, zi, force_param_initial_guess=True):
+        super().select_params(xi, zi, force_param_initial_guess=force_param_initial_guess)
+        self.smoothed_data = (
+            xi,
+            self.predict(xi, zi, xi, convert_out=False)[0]
+        )
+
+    def select_params(self, xi, zi, force_param_initial_guess=True):
+        """Parameter selection"""
+
+        xi_ = gnp.asarray(xi)
+        zi_ = gnp.asarray(zi)
+        if zi_.ndim == 1:
+            zi_ = zi_.reshape(-1, 1)
+
+        # Safer: one run with small length scales does not alter the subsequent ones.
+        assert force_param_initial_guess
+
+        self.zi_relaxed = gnp.copy(zi_)
+
+        for i in range(self.output_dim):
+            tic = time.time()
+
+            model = self.models[i]
+            mpl = model["mean_paramlength"]
+            assert mpl == 1
+
+            covparam_bounds = self.get_covparam_bounds(gnp.to_np(xi_), gnp.to_np(zi_[:, i]))
+
+            G, R_list = self.get_G_and_R_list(i, xi_, zi_)
+
+            #
+            _largest_R = R_list[0]
+            _ei = regp.get_membership_indices(gnp.to_np(zi_[:, i]), _largest_R)
+            (_x0, _z0, _ind0), _ = regp.split_data(xi_, gnp.to_np(zi_[:, i]), _ei, _largest_R)
+
+            print("Estimate noise with a GP in G = {}".format(G))
+            self.models[i]["model"], _, _, info_ret = regp.remodel(
+                model["model"],
+                _x0,
+                gnp.asarray(_z0),
+                [[gnp.numpy.inf, gnp.numpy.inf]],
+                covparam_bounds,
+                self.models[i]["parameters_initial_guess_procedure"],
+                regp.make_regp_criterion_with_gradient,
+                True,
+                optim_options=self.crit_optim_options,
+            )
+
+            noise_param = model["model"].covparam[-1]
+            #
+
+            print("Build reGP model for G = {}".format(G))
+
+            filtered_covparam_bounds = covparam_bounds[:(-1)]
+
+            def filtered_initializer(model, xi, zi, max_scaling=10.0):
+                mean_init, covparam_init = self.models[i]["parameters_initial_guess_procedure"](model, xi, zi, max_scaling=max_scaling)
+                covparam_init = covparam_init[:(-1)]
+
+                return mean_init, covparam_init
+
+            criterion_maker = lambda model, x0, z0, x1, meanparam_dim: self.make_regp_criterion_with_gradient(
+                model, x0, z0, x1, meanparam_dim, noise_param
+            )
+
+            print("Select R")
+            R = regp.select_optimal_R(
+                model["model"],
+                xi_,
+                gnp.asarray(zi_[:, i]),
+                G,
+                R_list,
+                filtered_covparam_bounds,
+                filtered_initializer,
+                criterion_maker,
+                optim_options=self.crit_optim_options,
+            )
+
+            print("Build model for selected R")
+            self.models[i]["model"], self.zi_relaxed[:, i], _, info_ret = regp.remodel(
+                model["model"],
+                xi_,
+                gnp.asarray(zi_[:, i]),
+                R,
+                filtered_covparam_bounds,
+                filtered_initializer,
+                criterion_maker,
+                True,
+                optim_options=self.crit_optim_options,
+            )
+            print("reGP model built")
+
+            self.models[i]["info"] = info_ret
+            self.models[i]["R"] = R
+            self.models[i]["param0"] = None
+            self.models[i]["param"] = None
+            self.models[i]["time"] = time.time() - tic
+
+    def make_regp_criterion_with_gradient(self, model, x0, z0, x1, meanparam_dim, noise_param):
+        """
+        Make regp criterion function with gradient.
+
+        Parameters
+        ----------
+        model : gpmp model
+            Gaussian process model.
+        x0 : ndarray, shape (n0, d)
+            Locations of the observed data points not relaxed
+        z0 : ndarray, shape (n0,)
+            Observed values at the data points not relaxed
+        x1 : ndarray, shape (n1, d)
+            Locations of the relaxed  data points
+        meanparam_dim : int,
+            Number of dimension of the mean parameter
+        noise_param : float
+            Transformed value of the noise parameter which will be held fixed
+
+        Returns
+        -------
+        crit_jit : function
+            Selection criterion function with gradient.
+        dcrit : function
+            Gradient of the selection criterion function.
+        """
+        x0 = gnp.asarray(x0)
+        x1 = gnp.asarray(x1)
+        z0 = gnp.asarray(z0)
+
+        xi = gnp.vstack((x0, x1))
+
+        n1 = x1.shape[0]
+
+        # selection criterion
+
+        selection_criterion = model.negative_log_likelihood
+
+        def crit_(param):
+            meanparam = param[0:meanparam_dim]
+
+            param = param[meanparam_dim:]
+
+            if n1 > 0:
+                covparam = param[0:(-n1 - 1)]
+                z1 = param[-n1:]
+            elif n1 == 0:
+                covparam = param[:(-1)]
+                z1 = gnp.array([])
+            else:
+                raise ValueError(n1)
+
+            covparam = gnp.concatenate((covparam, gnp.asarray([noise_param])))
+
+            zi = gnp.concatenate((z0, z1))
+            l = selection_criterion(meanparam, covparam, xi, zi)
+            return l
+
+        crit_jit = gnp.jax.jit(crit_)
+
+        dcrit = gnp.jax.jit(gnp.grad(crit_jit))
+
+        return crit_jit, dcrit
+
+
+
 # ==============================================================================
 # Mean Functions Section
 # ==============================================================================
