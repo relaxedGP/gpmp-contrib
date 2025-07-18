@@ -1496,13 +1496,6 @@ class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp
 
 
     def select_params(self, xi, zi, force_param_initial_guess=True):
-        super().select_params(xi, zi, force_param_initial_guess=force_param_initial_guess)
-        self.smoothed_data = (
-            xi,
-            self.predict(xi, zi, xi, convert_out=False)[0]
-        )
-
-    def select_params(self, xi, zi, force_param_initial_guess=True):
         """Parameter selection"""
 
         xi_ = gnp.asarray(xi)
@@ -1593,6 +1586,11 @@ class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp
             self.models[i]["param0"] = None
             self.models[i]["param"] = None
             self.models[i]["time"] = time.time() - tic
+
+        self.smoothed_data = (
+            xi,
+            self.predict(xi, zi, xi, convert_out=False)[0]
+        )
 
     def make_regp_criterion_with_gradient(self, model, x0, z0, x1, meanparam_dim, noise_param):
         """
