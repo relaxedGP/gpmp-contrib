@@ -1525,6 +1525,7 @@ class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp
             (_x0, _z0, _ind0), _ = regp.split_data(xi_, gnp.to_np(zi_[:, i]), _ei, _largest_R)
 
             print("Estimate noise with a GP in G = {}".format(G))
+            self.models[i]["model"].covariance = self.covariance_functions[i]
             self.models[i]["model"], _, _, info_ret_gp = regp.remodel(
                 model["model"],
                 _x0,
@@ -1544,15 +1545,23 @@ class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp
 
             filtered_covparam_bounds = covparam_bounds[:(-1)]
 
-            def filtered_initializer(model, xi, zi, max_scaling=10.0):
-                mean_init, covparam_init = self.models[i]["parameters_initial_guess_procedure"](model, xi, zi, max_scaling=max_scaling)
-                covparam_init = covparam_init[:(-1)]
+            # def filtered_initializer(model, xi, zi, max_scaling=10.0):
+            #     mean_init, covparam_init = self.models[i]["parameters_initial_guess_procedure"](model, xi, zi, max_scaling=max_scaling)
+            #     covparam_init = covparam_init[:(-1)]
+            #
+            #     return mean_init, covparam_init
 
-                return mean_init, covparam_init
+            # criterion_maker = lambda model, x0, z0, x1, meanparam_dim: self.make_regp_criterion_with_gradient(
+            #     model, x0, z0, x1, meanparam_dim, noise_param
+            # )
 
-            criterion_maker = lambda model, x0, z0, x1, meanparam_dim: self.make_regp_criterion_with_gradient(
-                model, x0, z0, x1, meanparam_dim, noise_param
-            )
+            def partial_covariance(x, y, covparam, pairwise=False, use_noise=True):
+                covparam_augmented = gnp.concatenate((
+                    covparam, gnp.array([noise_param])
+                ))
+                return self.covariance_functions[i](x, y, covparam_augmented, pairwise=pairwise, use_noise=use_noise)
+
+            self.models[i]["model"].covariance = partial_covariance
 
             print("Select R")
             R = regp.select_optimal_R(
@@ -1562,8 +1571,8 @@ class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp
                 G,
                 R_list,
                 filtered_covparam_bounds,
-                filtered_initializer,
-                criterion_maker,
+                noisy_initial_guess_fixed_noise_procedure,
+                regp.make_regp_criterion_with_gradient,
                 optim_options=self.crit_optim_options,
             )
 
@@ -1574,8 +1583,8 @@ class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp
                 gnp.asarray(zi_[:, i]),
                 R,
                 filtered_covparam_bounds,
-                filtered_initializer,
-                criterion_maker,
+                noisy_initial_guess_fixed_noise_procedure,
+                regp.make_regp_criterion_with_gradient,
                 True,
                 optim_options=self.crit_optim_options,
             )
@@ -1656,7 +1665,63 @@ class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp
 
         return crit_jit, dcrit
 
+def noisy_initial_guess_fixed_noise_procedure(model, xi, zi, scaling=1.0):
+    """Anisotropic initialization strategy with a parameterized constant mean.
 
+    This function provides initial parameter guesses for an
+    anisotropic Gaussian process with a parameterized constant mean.
+
+    Parameters
+    ----------
+    model : object
+        The Gaussian process model object.
+    xi : array_like, shape (n, d)
+        Input data points used for fitting the GP model, where `n` is
+        the number of points and `d` is the dimensionality.
+    zi : array_like, shape (n, )
+        Output (response) values corresponding to the input data points xi.
+    scaling : float
+        Multiple of the isotropic length scale parameters.
+    """
+
+    multiple = 10 ** (-6)
+    n_increase = 20
+
+    xi_ = gnp.asarray(xi)
+    zi_ = gnp.asarray(zi).reshape((-1, 1))  # Ensure zi_ is a column vector
+    n = xi_.shape[0]
+    d = xi_.shape[1]
+
+    delta = gnp.max(xi_, axis=0) - gnp.min(xi_, axis=0)
+    rho = gnp.exp(gnp.gammaln(d / 2 + 1) / d) / (gnp.pi ** 0.5) * delta
+
+    # Maximum isotropic multiple
+    rho = scaling * rho
+
+    log_data_var = gnp.log(zi_.var())
+    log_multiple = log_data_var + gnp.log(multiple)
+
+    nll_list = []
+    mean_GLS_list = []
+    covparam_list = []
+
+    for j in range(n_increase):
+        covparam = gnp.concatenate((gnp.array([log_multiple + j * gnp.log(10)]), -gnp.log(rho)))
+
+        covparam_list.append(covparam)
+
+        _, Kinv1, Kinvz = model.k_inverses(xi_, zi_, covparam, True)
+        mean_GLS = gnp.sum(Kinvz) / gnp.sum(Kinv1)
+
+        mean_GLS_list.append(mean_GLS)
+
+        nll_list.append(
+            model.negative_log_likelihood(mean_GLS, covparam, xi_, zi_.reshape(-1))
+        )
+
+    idx_min = gnp.numpy.argmin(nll_list)
+
+    return mean_GLS_list[idx_min], covparam_list[idx_min]
 
 # ==============================================================================
 # Mean Functions Section
