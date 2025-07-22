@@ -248,8 +248,7 @@ def profile_relaxed_observations(model, x0, x1, z0, meanparam, covparam, z1_boun
     return x
 
 def remodel(
-        model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, make_criterion_with_gradient,
-        info=False, verbosity=0, optim_options={},
+        model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, info=False, verbosity=0, optim_options={},
 ):
     """
     Perform reGP optimization (REML + relaxation)
@@ -268,8 +267,6 @@ def remodel(
         Bounds for covariance parameters.
     initial_params_guess_procedure : callable
         Methods for an initial guess of the parameters of the mean function and the kernel
-    make_criterion_with_gradient : callable
-        Method for creating the criterion and its gradient
     info : bool, optional
         Whether to return additional information.
     verbosity : int, optional
@@ -287,29 +284,28 @@ def remodel(
         Additional information (if info=True).
     """
     if optim_options["relaxed_init"] in ["flat", "f-values", "quad_prog"]:
-        return _remodel(model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, make_criterion_with_gradient,
-                        info=info, verbosity=verbosity, optim_options=optim_options)
+        return _remodel(model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, info=info,
+                        verbosity=verbosity, optim_options=optim_options)
     else:
         assert optim_options["relaxed_init"] == "both"
 
     _optim_options = deepcopy(optim_options)
 
     _optim_options["relaxed_init"] = "flat"
-    nll_1 = _remodel(model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, make_criterion_with_gradient,
+    nll_1 = _remodel(model, xi, zi, R, covparam_bounds, initial_params_guess_procedure,
                      info=True, verbosity=verbosity, optim_options=_optim_options)[3].fun
     _optim_options["relaxed_init"] = "f-values"
-    nll_2 = _remodel(model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, make_criterion_with_gradient,
+    nll_2 = _remodel(model, xi, zi, R, covparam_bounds, initial_params_guess_procedure,
                      info=True, verbosity=verbosity, optim_options=_optim_options)[3].fun
 
     print("NLL1 : {}, NLL2: {}".format(nll_1, nll_2))
     if nll_1 < nll_2:
         _optim_options["relaxed_init"] = "flat"
-    return _remodel(model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, make_criterion_with_gradient,
+    return _remodel(model, xi, zi, R, covparam_bounds, initial_params_guess_procedure,
                     info=info, verbosity=verbosity, optim_options=_optim_options)
 
 def _remodel(
-        model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, make_criterion_with_gradient,
-        info=False, verbosity=0, optim_options={}
+        model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, info=False, verbosity=0, optim_options={},
 ):
     """
     Perform reGP optimization (REML + relaxation)
@@ -328,8 +324,6 @@ def _remodel(
         Bounds for covariance parameters.
     initial_params_guess_procedure : callable
         Methods for an initial guess of the parameters of the mean function and the kernel
-    make_criterion_with_gradient : callable
-        Method for creating the criterion and its gradient
     info : bool, optional
         Whether to return additional information.
     verbosity : int, optional
@@ -419,7 +413,7 @@ def _remodel(
     bounds = meanparam_bounds + covparam_bounds + [tuple(_z1_bounds) for _z1_bounds in z1_bounds]
 
     # reGP criterion
-    nlrl, dnlrl = make_criterion_with_gradient(model, x0, z0, x1, meanparam_dim)
+    nlrl, dnlrl = make_regp_criterion_with_gradient(model, x0, z0, x1, meanparam_dim)
 
     # Verbosity level
     silent = True
@@ -524,8 +518,7 @@ def predict(model, xi, zi, xt, R, covparam0=None, info=False, verbosity=0):
 
     return zi_relaxed, (zpm, zpv), model, info_ret
 
-def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, initial_params_guess_procedure,
-                     make_criterion_with_gradient, optim_options):
+def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, initial_params_guess_procedure, optim_options):
     """
     Choose threshold for reGP with relaxation above t0
 
@@ -549,8 +542,6 @@ def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, initial_params_g
         Bounds for covariance parameters.
     initial_params_guess_procedure : callable
         Methods for an initial guess of the parameters of the mean function and the kernel
-    make_criterion_with_gradient : callable
-        Method for creating the criterion and its gradient
     optim_options : dict
         Options passed to remodel
 
@@ -564,7 +555,7 @@ def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, initial_params_g
     J = gnp.numpy.zeros(q)
     for i in range(q):
         model, zi_relaxed, _ = remodel(model, xi, zi, R_list[i], covparam_bounds, initial_params_guess_procedure,
-                                       make_criterion_with_gradient, optim_options=optim_options)
+                                       optim_options=optim_options)
         zloom, zloov, _ = model.loo(xi, zi_relaxed)
         tCRPS = gp.misc.scoringrules.tcrps_gaussian(zloom, gnp.sqrt(zloov), zi_relaxed, a=G[0], b=G[1])
         J[i] = gnp.sum(tCRPS)

@@ -1351,7 +1351,6 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
                 R_list,
                 covparam_bounds,
                 self.models[i]["parameters_initial_guess_procedure"],
-                regp.make_regp_criterion_with_gradient,
                 optim_options=self.crit_optim_options,
             )
 
@@ -1363,7 +1362,6 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
                 R,
                 covparam_bounds,
                 self.models[i]["parameters_initial_guess_procedure"],
-                regp.make_regp_criterion_with_gradient,
                 True,
                 optim_options=self.crit_optim_options,
             )
@@ -1572,7 +1570,6 @@ class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp
                 R_list,
                 filtered_covparam_bounds,
                 noisy_initial_guess_fixed_noise_procedure,
-                regp.make_regp_criterion_with_gradient,
                 optim_options=self.crit_optim_options,
             )
 
@@ -1584,7 +1581,6 @@ class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp
                 R,
                 filtered_covparam_bounds,
                 noisy_initial_guess_fixed_noise_procedure,
-                regp.make_regp_criterion_with_gradient,
                 True,
                 optim_options=self.crit_optim_options,
             )
@@ -1601,69 +1597,6 @@ class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp
             self.predict(xi, zi, xi, convert_out=False)[0]
         )
 
-    def make_regp_criterion_with_gradient(self, model, x0, z0, x1, meanparam_dim, noise_param):
-        """
-        Make regp criterion function with gradient.
-
-        Parameters
-        ----------
-        model : gpmp model
-            Gaussian process model.
-        x0 : ndarray, shape (n0, d)
-            Locations of the observed data points not relaxed
-        z0 : ndarray, shape (n0,)
-            Observed values at the data points not relaxed
-        x1 : ndarray, shape (n1, d)
-            Locations of the relaxed  data points
-        meanparam_dim : int,
-            Number of dimension of the mean parameter
-        noise_param : float
-            Transformed value of the noise parameter which will be held fixed
-
-        Returns
-        -------
-        crit_jit : function
-            Selection criterion function with gradient.
-        dcrit : function
-            Gradient of the selection criterion function.
-        """
-        x0 = gnp.asarray(x0)
-        x1 = gnp.asarray(x1)
-        z0 = gnp.asarray(z0)
-
-        xi = gnp.vstack((x0, x1))
-
-        n1 = x1.shape[0]
-
-        # selection criterion
-
-        selection_criterion = model.negative_log_likelihood
-
-        def crit_(param):
-            meanparam = param[0:meanparam_dim]
-
-            param = param[meanparam_dim:]
-
-            if n1 > 0:
-                covparam = param[0:(-n1 - 1)]
-                z1 = param[-n1:]
-            elif n1 == 0:
-                covparam = param[:(-1)]
-                z1 = gnp.array([])
-            else:
-                raise ValueError(n1)
-
-            covparam = gnp.concatenate((covparam, gnp.asarray([noise_param])))
-
-            zi = gnp.concatenate((z0, z1))
-            l = selection_criterion(meanparam, covparam, xi, zi)
-            return l
-
-        crit_jit = gnp.jax.jit(crit_)
-
-        dcrit = gnp.jax.jit(gnp.grad(crit_jit))
-
-        return crit_jit, dcrit
 
 def noisy_initial_guess_fixed_noise_procedure(model, xi, zi, scaling=1.0):
     """Anisotropic initialization strategy with a parameterized constant mean.
