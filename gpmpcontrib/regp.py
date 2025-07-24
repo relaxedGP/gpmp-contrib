@@ -54,15 +54,14 @@ optim_strategy = {
     ),
 }
 
-def two_sided(t, d, xi, zi, n_ranges):
-    raise NotImplementedError("Check.")
-    assert d > 0, (t, d, zi)
+def two_sided(t, d, zi_min, zi_max, n_ranges):
+    assert d > 0, (t, d, zi_min, zi_max)
 
     G = [float(t - d), float(t + d)]
 
     excursion_range = max(
-        zi.max() - G[1],
-        G[0] - zi.min(),
+        zi_max - G[1],
+        G[0] - zi_min,
     )
 
     side_spread = np.logspace(
@@ -78,14 +77,14 @@ def two_sided(t, d, xi, zi, n_ranges):
 
 
 levelset_strategy = {
-    "Constant": lambda l, rng, box, options: lambda xi, zi: two_sided(
-        options["t"], np.quantile(np.abs(zi[:options["n_init"]] - options["t"]), l), xi, zi, options["n_ranges"]
+    "Constant": lambda l, rng, box, options: lambda xi, zi, zi_min, zi_max: two_sided(
+        options["t"], np.quantile(np.abs(zi[:options["n_init"]] - options["t"]), l), zi_min, zi_max, options["n_ranges"]
     ),
-    "Concentration": lambda l, rng, box, options: lambda xi, zi: two_sided(
-        options["t"], np.quantile(np.abs(zi - options["t"]), l), xi, zi, options["n_ranges"]
+    "Concentration": lambda l, rng, box, options: lambda xi, zi, zi_min, zi_max: two_sided(
+        options["t"], np.quantile(np.abs(zi - options["t"]), l), zi_min, zi_max, options["n_ranges"]
     ),
-    "Spatial": lambda l, rng, box, options: lambda xi, zi: two_sided(
-        options["t"], get_rectified_spatial_quantile(xi, np.abs(zi - options["t"]), box, rng, l), xi, zi, options["n_ranges"]
+    "Spatial": lambda l, rng, box, options: lambda xi, zi, zi_min, zi_max: two_sided(
+        options["t"], get_rectified_spatial_quantile(xi, np.abs(zi - options["t"]), box, rng, l), zi_min, zi_max, options["n_ranges"]
     ),
 }
 
