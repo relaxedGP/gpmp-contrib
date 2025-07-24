@@ -1543,16 +1543,6 @@ class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp
 
             filtered_covparam_bounds = covparam_bounds[:(-1)]
 
-            # def filtered_initializer(model, xi, zi, max_scaling=10.0):
-            #     mean_init, covparam_init = self.models[i]["parameters_initial_guess_procedure"](model, xi, zi, max_scaling=max_scaling)
-            #     covparam_init = covparam_init[:(-1)]
-            #
-            #     return mean_init, covparam_init
-
-            # criterion_maker = lambda model, x0, z0, x1, meanparam_dim: self.make_regp_criterion_with_gradient(
-            #     model, x0, z0, x1, meanparam_dim, noise_param
-            # )
-
             def partial_covariance(x, y, covparam, pairwise=False, use_noise=True):
                 covparam_augmented = gnp.concatenate((
                     covparam, gnp.array([noise_param])
