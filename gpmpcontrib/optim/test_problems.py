@@ -1,8 +1,40 @@
 import numpy as np
 from gpmpcontrib.computerexperiment import ComputerExperiment
+import sys
+
 
 _TEST = False
 
+#
+
+def __getattr__(name, rng):
+    split_name = name.split("-")
+    if not split_name[0] == "noisy":
+        return getattr(sys.modules[__name__], name)
+
+    noise_variance = float(split_name[-1])
+
+    noiseless_problem = __getattr__("-".join(split_name[1:(-1)]), rng)
+
+    def _noisy_objective(x, noise_variance, rng):
+        # Placeholder function for noiseless problem
+        assert len(noiseless_problem.functions) == 1, noiseless_problem.functions
+        noiseless_obj = noiseless_problem.functions[0]["function"](x)
+        obj = noiseless_obj + rng.normal(size=noiseless_obj.shape, scale=np.sqrt(noise_variance))
+        return obj
+
+    noisy_problem = ComputerExperiment(
+        noiseless_problem.input_dim,
+        noiseless_problem.input_box,
+        single_objective=lambda x: _noisy_objective(x, noise_variance, rng),
+    )
+
+    noisy_problem.noiseless_problem = noiseless_problem
+
+    return noisy_problem
+
+
+#
 def plog(x):
     return np.where(x >= 0, np.log(1 + x), -np.log(1 - x))
 
@@ -685,63 +717,6 @@ goldstein_price_log = ComputerExperiment(
     _goldstein_price_log_dict["input_dim"],
     _goldstein_price_log_dict["input_box"],
     single_objective=_goldstein_price_log_dict["single_objective"],
-)
-
-#  ==== Noisy-GoldsteinPrice function ====
-
-def _noisy_goldstein_price_objective(x, noise_variance, rng):
-    # Placeholder function for GoldsteinPrice
-    obj_gp = _goldsteinprice_objective(x).reshape(-1, 1)
-    obj_gp = obj_gp + rng.normal(size=obj_gp.shape, scale=np.sqrt(noise_variance))
-    return obj_gp
-
-_noisy_goldstein_price_dict = {
-    "input_dim": 2,
-    "input_box": [[-2, -2], [2, 2]],
-}
-
-noisy_goldstein_price = lambda noise_variance, rng: ComputerExperiment(
-    _noisy_goldstein_price_dict["input_dim"],
-    _noisy_goldstein_price_dict["input_box"],
-    single_objective=lambda x: _noisy_goldstein_price_objective(x, noise_variance, rng),
-)
-
-#  ==== Noisy-Log-GoldsteinPrice function ====
-
-def _noisy_goldstein_price_log_objective(x, noise_variance, rng):
-    # Placeholder function for GoldsteinPrice
-    obj_gp = _goldstein_price_log_objective(x).reshape(-1, 1)
-    obj_gp = obj_gp + rng.normal(size=obj_gp.shape, scale=np.sqrt(noise_variance))
-    return obj_gp
-
-_noisy_goldstein_price_log_dict = {
-    "input_dim": 2,
-    "input_box": [[-2, -2], [2, 2]],
-}
-
-noisy_goldstein_price_log = lambda noise_variance, rng: ComputerExperiment(
-    _noisy_goldstein_price_log_dict["input_dim"],
-    _noisy_goldstein_price_log_dict["input_box"],
-    single_objective=lambda x: _noisy_goldstein_price_log_objective(x, noise_variance, rng),
-)
-
-#  ==== Beale function ====
-
-def _noisy_beale_objective(x, noise_variance, rng):
-    # Placeholder function for Noisy Beale
-    obj_beale = _beale_objective(x).reshape(-1, 1)
-    obj_beale = obj_beale + rng.normal(size=obj_beale.shape, scale=np.sqrt(noise_variance))
-    return obj_beale
-
-_noisy_beale_dict = {
-    "input_dim": 2,
-    "input_box": [[-4.5, -4.5], [4.5, 4.5]],
-}
-
-noisy_beale = lambda noise_variance, rng: ComputerExperiment(
-    _noisy_beale_dict["input_dim"],
-    _noisy_beale_dict["input_box"],
-    single_objective=lambda x: _noisy_beale_objective(x, noise_variance, rng),
 )
 
 # ===== Shekel Problems ======
