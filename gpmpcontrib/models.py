@@ -1398,7 +1398,7 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
         return zpm, zpv
 
 # ==============================================================================
-# ModelMaternp reGP Class
+# Noisy ModelMaternp reGP Class
 # ==============================================================================
 
 
