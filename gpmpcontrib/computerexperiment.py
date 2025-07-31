@@ -308,13 +308,17 @@ class ComputerExperiment:
 
     def eval(self, x):
         x_tuple = tuple(x) if x.ndim == 1 else tuple(map(tuple, x))
-        if self._last_x is not None and self._last_x == x_tuple:
-            return self._last_result
-        else:
-            result = self._eval_functions(self.functions, x)
-            self._last_x = x_tuple
-            self._last_result = result
-            return result
+
+        # FIXME:() For noisy experiments. TODO: use StochasticComputerExperiments.
+        result = self._eval_functions(self.functions, x)
+        return result
+        # if self._last_x is not None and self._last_x == x_tuple:
+        #     return self._last_result
+        # else:
+        #     result = self._eval_functions(self.functions, x)
+        #     self._last_x = x_tuple
+        #     self._last_result = result
+        #     return result
 
     def eval_objectives(self, x):
         results = self.eval(x)

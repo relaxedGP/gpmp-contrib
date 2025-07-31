@@ -1,8 +1,40 @@
 import numpy as np
 from gpmpcontrib.computerexperiment import ComputerExperiment
+import sys
+
 
 _TEST = False
 
+#
+
+def __getattr__(name, rng):
+    split_name = name.split("-")
+    if not split_name[0] == "noisy":
+        return getattr(sys.modules[__name__], name)
+
+    noise_variance = float(split_name[-1])
+
+    noiseless_problem = __getattr__("-".join(split_name[1:(-1)]), rng)
+
+    def _noisy_objective(x, noise_variance, rng):
+        # Placeholder function for noiseless problem
+        assert len(noiseless_problem.functions) == 1, noiseless_problem.functions
+        noiseless_obj = noiseless_problem.functions[0]["function"](x)
+        obj = noiseless_obj + rng.normal(size=noiseless_obj.shape, scale=np.sqrt(noise_variance))
+        return obj
+
+    noisy_problem = ComputerExperiment(
+        noiseless_problem.input_dim,
+        noiseless_problem.input_box,
+        single_objective=lambda x: _noisy_objective(x, noise_variance, rng),
+    )
+
+    noisy_problem.noiseless_problem = noiseless_problem
+
+    return noisy_problem
+
+
+#
 def plog(x):
     return np.where(x >= 0, np.log(1 + x), -np.log(1 - x))
 

@@ -43,25 +43,25 @@ def one_sided(t0, min_value, max_value, n_ranges):
     return G, R_list
 
 optim_strategy = {
-    "Constant": lambda l, rng, box, options: lambda xi, zi: one_sided(
-        np.quantile(zi[:options["n_init"]], l), zi.min(), zi.max(), options["n_ranges"]
+    "Constant": lambda l, rng, box, options: lambda xi, zi, zi_min, zi_max: one_sided(
+        np.quantile(zi[:options["n_init"]], l), zi_min, zi_max, options["n_ranges"]
     ),
-    "Concentration": lambda l, rng, box, options: lambda xi, zi: one_sided(
-        np.quantile(zi, l), zi.min(), zi.max(), options["n_ranges"]
+    "Concentration": lambda l, rng, box, options: lambda xi, zi, zi_min, zi_max: one_sided(
+        np.quantile(zi, l), zi_min, zi_max, options["n_ranges"]
     ),
-    "Spatial": lambda l, rng, box, options: lambda xi, zi: one_sided(
-        get_rectified_spatial_quantile(xi, zi, box, rng, l), zi.min(), zi.max(), options["n_ranges"]
+    "Spatial": lambda l, rng, box, options: lambda xi, zi, zi_min, zi_max: one_sided(
+        get_rectified_spatial_quantile(xi, zi, box, rng, l), zi_min, zi_max, options["n_ranges"]
     ),
 }
 
-def two_sided(t, d, xi, zi, n_ranges):
-    assert d > 0, (t, d, zi)
+def two_sided(t, d, zi_min, zi_max, n_ranges):
+    assert d > 0, (t, d, zi_min, zi_max)
 
     G = [float(t - d), float(t + d)]
 
     excursion_range = max(
-        zi.max() - G[1],
-        G[0] - zi.min(),
+        zi_max - G[1],
+        G[0] - zi_min,
     )
 
     side_spread = np.logspace(
@@ -77,14 +77,14 @@ def two_sided(t, d, xi, zi, n_ranges):
 
 
 levelset_strategy = {
-    "Constant": lambda l, rng, box, options: lambda xi, zi: two_sided(
-        options["t"], np.quantile(np.abs(zi[:options["n_init"]] - options["t"]), l), xi, zi, options["n_ranges"]
+    "Constant": lambda l, rng, box, options: lambda xi, zi, zi_min, zi_max: two_sided(
+        options["t"], np.quantile(np.abs(zi[:options["n_init"]] - options["t"]), l), zi_min, zi_max, options["n_ranges"]
     ),
-    "Concentration": lambda l, rng, box, options: lambda xi, zi: two_sided(
-        options["t"], np.quantile(np.abs(zi - options["t"]), l), xi, zi, options["n_ranges"]
+    "Concentration": lambda l, rng, box, options: lambda xi, zi, zi_min, zi_max: two_sided(
+        options["t"], np.quantile(np.abs(zi - options["t"]), l), zi_min, zi_max, options["n_ranges"]
     ),
-    "Spatial": lambda l, rng, box, options: lambda xi, zi: two_sided(
-        options["t"], get_rectified_spatial_quantile(xi, np.abs(zi - options["t"]), box, rng, l), xi, zi, options["n_ranges"]
+    "Spatial": lambda l, rng, box, options: lambda xi, zi, zi_min, zi_max: two_sided(
+        options["t"], get_rectified_spatial_quantile(xi, np.abs(zi - options["t"]), box, rng, l), zi_min, zi_max, options["n_ranges"]
     ),
 }
 
@@ -221,7 +221,7 @@ def profile_relaxed_observations(model, x0, x1, z0, meanparam, covparam, z1_boun
 
     z1_prior_mean = gnp.to_np(model.mean(x1, meanparam).reshape(-1))
 
-    K = model.covariance(np.vstack((x1, x0)), np.vstack((x1, x0)), covparam)
+    K = model.covariance(np.vstack((x1, x0)), None, covparam)
     Kinv = gnp.to_np(gnp.cholesky_inv(K))
 
     P = Kinv[np.ix_(np.arange(0, x1.shape[0]), np.arange(0, x1.shape[0]))]
@@ -234,6 +234,10 @@ def profile_relaxed_observations(model, x0, x1, z0, meanparam, covparam, z1_boun
 
     x = solve_qp(P, q, lb=lb, ub=ub, solver="quadprog")
 
+    # TODO:() Improve robustness
+    if x is None:
+        return x
+
     for i in range(x.shape[0]):
         if x[i] <= z1_bounds[i][0]:
             x[i] = z1_bounds[i][0]
@@ -243,7 +247,7 @@ def profile_relaxed_observations(model, x0, x1, z0, meanparam, covparam, z1_boun
     return x
 
 def remodel(
-        model, xi, zi, R, covparam_bounds, info=False, verbosity=0, optim_options={},
+        model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, info=False, verbosity=0, optim_options={},
 ):
     """
     Perform reGP optimization (REML + relaxation)
@@ -258,6 +262,10 @@ def remodel(
         Observed values at the data points.
     R : list of intervals
         List of relaxation intervals, each specified as [l_k, u_k].
+    covparam_bounds : ndarray
+        Bounds for covariance parameters.
+    initial_params_guess_procedure : callable
+        Methods for an initial guess of the parameters of the mean function and the kernel
     info : bool, optional
         Whether to return additional information.
     verbosity : int, optional
@@ -275,24 +283,28 @@ def remodel(
         Additional information (if info=True).
     """
     if optim_options["relaxed_init"] in ["flat", "f-values", "quad_prog"]:
-        return _remodel(model, xi, zi, R, covparam_bounds, info=info, verbosity=verbosity, optim_options=optim_options)
+        return _remodel(model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, info=info,
+                        verbosity=verbosity, optim_options=optim_options)
     else:
         assert optim_options["relaxed_init"] == "both"
 
     _optim_options = deepcopy(optim_options)
 
     _optim_options["relaxed_init"] = "flat"
-    nll_1 = _remodel(model, xi, zi, R, covparam_bounds, info=True, verbosity=verbosity, optim_options=_optim_options)[3].fun
+    nll_1 = _remodel(model, xi, zi, R, covparam_bounds, initial_params_guess_procedure,
+                     info=True, verbosity=verbosity, optim_options=_optim_options)[3].fun
     _optim_options["relaxed_init"] = "f-values"
-    nll_2 = _remodel(model, xi, zi, R, covparam_bounds, info=True, verbosity=verbosity, optim_options=_optim_options)[3].fun
+    nll_2 = _remodel(model, xi, zi, R, covparam_bounds, initial_params_guess_procedure,
+                     info=True, verbosity=verbosity, optim_options=_optim_options)[3].fun
 
     print("NLL1 : {}, NLL2: {}".format(nll_1, nll_2))
     if nll_1 < nll_2:
         _optim_options["relaxed_init"] = "flat"
-    return _remodel(model, xi, zi, R, covparam_bounds, info=info, verbosity=verbosity, optim_options=_optim_options)
+    return _remodel(model, xi, zi, R, covparam_bounds, initial_params_guess_procedure,
+                    info=info, verbosity=verbosity, optim_options=_optim_options)
 
 def _remodel(
-        model, xi, zi, R, covparam_bounds, info=False, verbosity=0, optim_options={},
+        model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, info=False, verbosity=0, optim_options={},
 ):
     """
     Perform reGP optimization (REML + relaxation)
@@ -307,6 +319,10 @@ def _remodel(
         Observed values at the data points.
     R : list of intervals
         List of relaxation intervals, each specified as [l_k, u_k].
+    covparam_bounds : ndarray
+        Bounds for covariance parameters.
+    initial_params_guess_procedure : callable
+        Methods for an initial guess of the parameters of the mean function and the kernel
     info : bool, optional
         Whether to return additional information.
     verbosity : int, optional
@@ -370,7 +386,7 @@ def _remodel(
         )
 
     # Initial guess for the parameters
-    meanparam0, covparam0 = gp.kernel.anisotropic_parameters_initial_guess_constant_mean(
+    meanparam0, covparam0 = initial_params_guess_procedure(
         model,
         np.vstack((x0, x1)),
         np.concatenate((z0, z1_relaxed_init))
@@ -386,7 +402,9 @@ def _remodel(
     # Optimize relaxed observations
     if optim_options['relaxed_init'] == 'quad_prog':
         if z1_relaxed_init.shape[0] > 0:
-            z1_relaxed_init = profile_relaxed_observations(model, x0, x1, z0, meanparam0, covparam0, z1_bounds)
+            profile_z1_relaxed_init = profile_relaxed_observations(model, x0, x1, z0, meanparam0, covparam0, z1_bounds)
+            if profile_z1_relaxed_init is not None:
+                z1_relaxed_init = profile_z1_relaxed_init
 
     # Initial parameter vector and bounds
     p0 = np.concatenate((meanparam0.reshape(1), covparam0, z1_relaxed_init))
@@ -499,7 +517,7 @@ def predict(model, xi, zi, xt, R, covparam0=None, info=False, verbosity=0):
 
     return zi_relaxed, (zpm, zpv), model, info_ret
 
-def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, optim_options):
+def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, initial_params_guess_procedure, optim_options):
     """
     Choose threshold for reGP with relaxation above t0
 
@@ -521,6 +539,8 @@ def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, optim_options):
         Relaxation range candidates.
     covparam_bounds : ndarray
         Bounds for covariance parameters.
+    initial_params_guess_procedure : callable
+        Methods for an initial guess of the parameters of the mean function and the kernel
     optim_options : dict
         Options passed to remodel
 
@@ -533,7 +553,8 @@ def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, optim_options):
 
     J = gnp.numpy.zeros(q)
     for i in range(q):
-        model, zi_relaxed, _ = remodel(model, xi, zi, R_list[i], covparam_bounds, optim_options=optim_options)
+        model, zi_relaxed, _ = remodel(model, xi, zi, R_list[i], covparam_bounds, initial_params_guess_procedure,
+                                       optim_options=optim_options)
         zloom, zloov, _ = model.loo(xi, zi_relaxed)
         tCRPS = gp.misc.scoringrules.tcrps_gaussian(zloom, gnp.sqrt(zloov), zi_relaxed, a=G[0], b=G[1])
         J[i] = gnp.sum(tCRPS)

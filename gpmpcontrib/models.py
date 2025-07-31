@@ -858,9 +858,9 @@ class Model_ConstantMeanMaternpML(Model):
 
         p = param["p"]
 
-        def maternp_covariance(x, y, covparam, pairwise=False):
+        def maternp_covariance(x, y, covparam, pairwise=False, use_noise=True):
             # Implementation of the Matérn covariance function using p and other parameters
-            return gp.kernel.maternp_covariance(x, y, p, covparam, pairwise)
+            return gp.kernel.maternp_covariance(x, y, p, covparam, pairwise=pairwise, use_noise=use_noise)
 
         return maternp_covariance
 
@@ -899,6 +899,269 @@ class Model_ConstantMeanMaternpML(Model):
             covparam_bounds = covparam_bounds + [(-gnp.inf, upper_bound)]
 
         return covparam_bounds
+
+# ==============================================================================
+# NoisyModelMaternpML Class
+# ==============================================================================
+
+
+class NoisyModel_ConstantMeanMaternpML(Model_ConstantMeanMaternpML):
+    """Noisy GP model with a constant mean and a Matern covariance function. Parameters are estimated by ML"""
+
+    def build_covariance(self, output_idx: int, param: dict):
+        """Create a Matérn covariance function for a specific output
+        index with given parameters.
+
+        Parameters
+        ----------
+        output_idx : int
+            The index of the output for which the covariance function
+            is being created.
+        params : dict
+            Additional parameters for the Matérn covariance function,
+            including regularity 'p'.
+
+        Returns
+        -------
+        function
+            A Matern covariance function.
+
+        """
+        if ("p" not in param) or (not isinstance(param["p"], int)):
+            raise ValueError(
+                f"Regularity 'p' should be integer and specified in 'param'"
+            )
+
+        p = param["p"]
+
+        def fixed_p_noisy_maternp_covariance(x, y, covparam, pairwise=False, use_noise=True):
+            # Implementation of the Matérn covariance function using p and other parameters
+            return noisy_maternp_covariance(x, y, p, covparam, pairwise=pairwise, use_noise=use_noise)
+
+        return fixed_p_noisy_maternp_covariance
+
+    def build_parameters_initial_guess_procedure(self, output_idx: int, **build_param):
+        return noisy_initial_guess_procedure
+
+    def get_covparam_bounds(self, xi, zi):
+        covparam_bounds = super().get_covparam_bounds(xi, zi)
+
+        log_relative_amplitude = 60 * gnp.log(10)
+        covparam_bounds.append(
+            (
+                gnp.log(zi.var()) - log_relative_amplitude,
+                gnp.log(zi.var()) + log_relative_amplitude
+            )
+        )
+
+        return covparam_bounds
+
+
+def noisy_maternp_covariance_ii_or_tt(x, p, param, use_noise, pairwise=False):
+    """Covariance between observations or predictands at x.
+
+    The covariance matrix is computed using the Matérn kernel with half-integer regularity:
+
+    .. math::
+
+        K_{ij} = \\sigma^2  K(h_{ij}) + \\epsilon \\delta_{ij}
+
+    where `K(h_{ij})` is the Matérn kernel value for the distance `h_{ij}` between points `x_i` and `x_j`,
+    `sigma^2` is the variance, `delta_{ij}` is the Kronecker delta, and `epsilon` is a small positive constant.
+
+    Parameters
+    ----------
+    x : gnp.array, shape (nx, d)
+        Observation points.
+    p : int
+        Half-integer regularity nu = p + 1/2.
+    param : gnp.array, shape (1 + d,)
+        sigma2 and range parameters.
+    use_noise : bool
+        add the noise to the kernel?
+    pairwise : bool, optional
+        Whether to return a covariance matrix k(x_i, x_j),
+        for i and j = 1 ... nx, if pairwise is False, or a covariance
+        vector k(x_i, x_i) if pairwise is True. Default is False.
+
+    Returns
+    -------
+    K : gnp.array
+        Covariance matrix (nx, nx) or covariance vector if pairwise is True.
+    """
+    sigma2 = gnp.exp(param[0])
+    loginvrho = param[1:(-1)]
+    noise_variance = gnp.exp(param[-1])
+
+    if pairwise:
+        # return a vector of covariances
+        K = sigma2 * gnp.ones((x.shape[0],))  # nx x 0
+        if use_noise:
+            K = K + noise_variance
+    else:
+        # return a covariance matrix
+        K = gnp.scaled_distance(loginvrho, x, x)  # nx x nx
+        K = sigma2 * gp.kernel.maternp_kernel(p, K)
+        if use_noise:
+            K = K + noise_variance * gnp.eye(K.shape[0])
+
+    return K
+
+def noisy_maternp_covariance_it(x, y, p, param, pairwise=False):
+    """Covariance between observations and prediction points.
+
+    Parameters
+    ----------
+    x : ndarray, shape (nx, d)
+        Observation points.
+    y : ndarray, shape (ny, d)
+        Observation points.
+    p : int
+        Half-integer regularity nu = p + 1/2.
+    param : ndarray, shape (1 + d,)
+        log(sigma2) and log(1/range) parameters.
+    pairwise : bool, optional
+        Whether to return a covariance matrix k(x_i, y_j),
+        for i in 1 ... nx and j in 1 ... ny, if pairwise is False,
+        or a covariance vector k(x_i, y_i) if pairwise is True. Default is False.
+
+    Returns
+    -------
+    K : ndarray
+        Covariance matrix (nx, ny) or covariance vector if pairwise is True.
+    """
+    sigma2 = gnp.exp(param[0])
+    loginvrho = param[1:(-1)]
+
+    if pairwise:
+        # return a vector of distances
+        K = gnp.scaled_distance_elementwise(loginvrho, x, y)  # nx x 0
+    else:
+        # return a distance matrix
+        K = gnp.scaled_distance(loginvrho, x, y)  # nx x ny
+
+    K = sigma2 * gp.kernel.maternp_kernel(p, K)
+
+    return K
+
+def noisy_maternp_covariance(x, y, p, param, pairwise=False, use_noise=True):
+    """Matérn covariance function with half-integer regularity nu = p + 1/2.
+
+    The kernel is defined in terms of the Euclidean distance, between
+    pairs of input points. For the Matérn kernel, the distance measure
+    is scaled by a length scale parameter, which controls how much
+    influence distant points have on each other. The kernel has two
+    hyperparameters: the length scale and a smoothness parameter,
+    which is typically an integer or half-integer value.
+
+    Parameters
+    ----------
+    x : ndarray, shape (nx, d)
+        Observation points.
+    y : ndarray, shape (ny, d) or None
+        Prediction points. If None, it is assumed that y is x.
+    p : int
+        Half-integer regularity nu = p + 1/2.
+    param : ndarray, shape (1 + d)
+        Covariance parameters
+        [log(sigma2) log(1/rho_1) log(1/rho_2) ...].
+    pairwise : bool, optional
+        If True, return a covariance vector k(x_i, y_i). If False,
+        return a covariance matrix k(x_i, y_j) for i in the range 1 to nx
+        and j in the range 1 to ny. Default is False.
+    use_noise : bool
+        add the noise to the kernel?
+
+    Returns
+    -------
+    K : ndarray
+        Covariance matrix (nx, ny) or covariance vector if pairwise is True.
+
+    Notes
+    -----
+    An isotropic covariance is obtained if param = [log(sigma2) log(1/rho)]
+    (only one length scale parameter).
+    """
+    if y is x or y is None:
+        return noisy_maternp_covariance_ii_or_tt(x, p, param, use_noise, pairwise)
+    else:
+        assert not use_noise
+        return noisy_maternp_covariance_it(x, y, p, param, pairwise)
+
+def noisy_initial_guess_procedure(model, xi, zi, max_scaling=10.0):
+    """Anisotropic initialization strategy with a parameterized constant mean.
+
+    This function provides initial parameter guesses for an
+    anisotropic Gaussian process with a parameterized constant mean.
+
+    Parameters
+    ----------
+    model : object
+        The Gaussian process model object.
+    xi : array_like, shape (n, d)
+        Input data points used for fitting the GP model, where `n` is
+        the number of points and `d` is the dimensionality.
+    zi : array_like, shape (n, )
+        Output (response) values corresponding to the input data points xi.
+    max_scaling : float
+        Maximum multiple of the isotropic length scale parameters.
+
+    Returns
+    -------
+    mean_GLS : float
+        The generalized least squares (GLS) estimator of the
+        mean. Computed as:
+
+        .. math::
+
+            m_{GLS} = \frac{\mathbf{1}^T K^{-1} \mathbf{z}}{\mathbf{1}^T K^{-1} \mathbf{1}}
+
+    concatenated parameters : array_like
+        An array containing the initialized :math:`\sigma^2_{GLS}` and :math:`\rho` values.
+        The estimator :math:`\sigma^2_{GLS}` is given by:
+
+        .. math::
+
+            \sigma^2_{GLS} = \frac{1}{n} \mathbf{z}^T K^{-1} \mathbf{z}
+    """
+    xi_ = gnp.asarray(xi)
+    zi_ = gnp.asarray(zi).reshape((-1, 1))  # Ensure zi_ is a column vector
+    n = xi_.shape[0]
+    d = xi_.shape[1]
+
+    delta = gnp.max(xi_, axis=0) - gnp.min(xi_, axis=0)
+    rho = gnp.exp(gnp.gammaln(d / 2 + 1) / d) / (gnp.pi ** 0.5) * delta
+
+    # Maximum isotropic multiple
+    rho = max_scaling * rho
+    cpt = 0
+    n_attempts = 20
+    adjustment_factor = 0.9
+    while True:
+        covparam = gnp.concatenate((gnp.array([gnp.log(1.0)]), -gnp.log(rho), gnp.array([gnp.log(1.0)])))
+        try:
+            zTKinvz, Kinv1, Kinvz = model.k_inverses(xi_, zi_, covparam)
+            # Invert succeeded with the largest possible multiple.
+            break
+        except gnp.linalg_error:
+            # Invert failed. Decrease rho and try again.
+            cpt += 1
+            rho = adjustment_factor * rho
+            if cpt > n_attempts:
+                # To much attempts. Use auto-nugget.
+                zTKinvz, Kinv1, Kinvz = model.k_inverses(xi_, zi_, covparam, True)
+                break
+            continue
+
+    assert zTKinvz > 0, "zTKinvz is not strictly positive: {}. Covparam = {}, z = {}".format(zTKinvz, covparam,
+                                                                                             zi_)
+
+    mean_GLS = gnp.sum(Kinvz) / gnp.sum(Kinv1)
+    sigma2_GLS = (1.0 / n) * zTKinvz
+    noise_var_GLS = sigma2_GLS
+
+    return mean_GLS.reshape(1), gnp.concatenate((gnp.log(sigma2_GLS), -gnp.log(rho), gnp.log(noise_var_GLS)))
+
 
 # ==============================================================================
 # ModelMaternp reGP Class
@@ -990,9 +1253,6 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
     # def build_covariance(self, output_idx: int, param: dict):
     #     pass
 
-    def build_parameters_initial_guess_procedure(self, output_idx: int, **build_param):
-        pass
-
     def build_selection_criterion(self, output_idx: int, **build_params):
         pass
 
@@ -1044,6 +1304,18 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
     ):
         raise NotImplementedError
 
+    def get_G_and_R_list(self, i, xi_, zi_):
+        """
+        Call to `self.threshold_strategies[i]`.
+        """
+        G, R_list = self.threshold_strategies[i](
+            gnp.to_np(xi_),
+            gnp.to_np(zi_[:, i]),
+            gnp.to_np(zi_[:, i].min()),
+            gnp.to_np(zi_[:, i].max())
+        )
+        return G, R_list
+
     def select_params(self, xi, zi, force_param_initial_guess=True):
         """Parameter selection"""
 
@@ -1066,7 +1338,7 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
 
             covparam_bounds = self.get_covparam_bounds(gnp.to_np(xi_), gnp.to_np(zi_[:, i]))
 
-            G, R_list = self.threshold_strategies[i](gnp.to_np(xi_), gnp.to_np(zi_[:, i]))
+            G, R_list = self.get_G_and_R_list(i, xi_, zi_)
 
             print("Build reGP model for G = {}".format(G))
 
@@ -1078,6 +1350,7 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
                 G,
                 R_list,
                 covparam_bounds,
+                self.models[i]["parameters_initial_guess_procedure"],
                 optim_options=self.crit_optim_options,
             )
 
@@ -1088,6 +1361,7 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
                 gnp.asarray(zi_[:, i]),
                 R,
                 covparam_bounds,
+                self.models[i]["parameters_initial_guess_procedure"],
                 True,
                 optim_options=self.crit_optim_options,
             )
@@ -1122,6 +1396,256 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
             zpv = zpv_
 
         return zpm, zpv
+
+# ==============================================================================
+# Noisy ModelMaternp reGP Class
+# ==============================================================================
+
+
+class NoisyModel_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternp_reGP):
+    """Noisy reGP model with a constant mean and a Matern covariance function."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.smoothed_data = None
+
+    def build_parameters_initial_guess_procedure(self, output_idx: int, **build_param):
+        return noisy_initial_guess_procedure
+
+    def build_covariance(self, output_idx: int, param: dict):
+        """Create a Matérn covariance function for a specific output
+        index with given parameters.
+
+        Parameters
+        ----------
+        output_idx : int
+            The index of the output for which the covariance function
+            is being created.
+        params : dict
+            Additional parameters for the Matérn covariance function,
+            including regularity 'p'.
+
+        Returns
+        -------
+        function
+            A Matern covariance function.
+
+        """
+        if ("p" not in param) or (not isinstance(param["p"], int)):
+            raise ValueError(
+                f"Regularity 'p' should be integer and specified in 'param'"
+            )
+
+        p = param["p"]
+
+        def fixed_p_noisy_maternp_covariance(x, y, covparam, pairwise=False, use_noise=True):
+            # Implementation of the Matérn covariance function using p and other parameters
+            return noisy_maternp_covariance(x, y, p, covparam, pairwise=pairwise, use_noise=use_noise)
+
+        return fixed_p_noisy_maternp_covariance
+
+    def get_covparam_bounds(self, xi, zi):
+        covparam_bounds = super().get_covparam_bounds(xi, zi)
+
+        log_relative_amplitude = 60 * gnp.log(10)
+        covparam_bounds.append(
+            (
+                gnp.log(zi.var()) - log_relative_amplitude,
+                gnp.log(zi.var()) + log_relative_amplitude
+            )
+        )
+
+        return covparam_bounds
+
+    def select_params(self, xi, zi, force_param_initial_guess=True):
+        super().select_params(xi, zi, force_param_initial_guess=force_param_initial_guess)
+        self.smoothed_data = (
+            xi,
+            self.predict(xi, zi, xi, convert_out=False)[0]
+        )
+
+    def get_G_and_R_list(self, i, xi_, zi_):
+        """
+        Call to `self.threshold_strategies[i]`. Do not call with the noisy values if there is noise.
+        """
+        if self.smoothed_data is not None:
+            xi_smoothed, zi_smoothed = self.smoothed_data
+        else:
+            xi_smoothed = xi_
+            zi_smoothed = zi_
+
+        G, R_list = self.threshold_strategies[i](
+            gnp.to_np(xi_smoothed),
+            gnp.to_np(zi_smoothed[:, i]),
+            gnp.to_np(zi_[:, i].min()),
+            gnp.to_np(zi_[:, i].max())
+        )
+        return G, R_list
+
+
+
+# ==============================================================================
+# Two-stage noisy ModelMaternp reGP Class
+# ==============================================================================
+
+
+class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp_reGP):
+    """Two-stage noisy reGP model with a constant mean and a Matern covariance function."""
+
+
+    def select_params(self, xi, zi, force_param_initial_guess=True):
+        """Parameter selection"""
+
+        xi_ = gnp.asarray(xi)
+        zi_ = gnp.asarray(zi)
+        if zi_.ndim == 1:
+            zi_ = zi_.reshape(-1, 1)
+
+        # Safer: one run with small length scales does not alter the subsequent ones.
+        assert force_param_initial_guess
+
+        self.zi_relaxed = gnp.copy(zi_)
+
+        for i in range(self.output_dim):
+            tic = time.time()
+
+            model = self.models[i]
+            mpl = model["mean_paramlength"]
+            assert mpl == 1
+
+            covparam_bounds = self.get_covparam_bounds(gnp.to_np(xi_), gnp.to_np(zi_[:, i]))
+
+            G, R_list = self.get_G_and_R_list(i, xi_, zi_)
+
+            #
+            _largest_R = R_list[0]
+            _ei = regp.get_membership_indices(gnp.to_np(zi_[:, i]), _largest_R)
+            (_x0, _z0, _ind0), _ = regp.split_data(xi_, gnp.to_np(zi_[:, i]), _ei, _largest_R)
+
+            print("Estimate noise with a GP in G = {}".format(G))
+            self.models[i]["model"].covariance = self.covariance_functions[i]
+            self.models[i]["model"], _, _, info_ret_gp = regp.remodel(
+                model["model"],
+                _x0,
+                gnp.asarray(_z0),
+                [[gnp.numpy.inf, gnp.numpy.inf]],
+                covparam_bounds,
+                self.models[i]["parameters_initial_guess_procedure"],
+                regp.make_regp_criterion_with_gradient,
+                True,
+                optim_options=self.crit_optim_options,
+            )
+
+            noise_param = model["model"].covparam[-1]
+            #
+
+            print("Build reGP model for G = {}".format(G))
+
+            filtered_covparam_bounds = covparam_bounds[:(-1)]
+
+            def partial_covariance(x, y, covparam, pairwise=False, use_noise=True):
+                covparam_augmented = gnp.concatenate((
+                    covparam, gnp.array([noise_param])
+                ))
+                return self.covariance_functions[i](x, y, covparam_augmented, pairwise=pairwise, use_noise=use_noise)
+
+            self.models[i]["model"].covariance = partial_covariance
+
+            print("Select R")
+            R = regp.select_optimal_R(
+                model["model"],
+                xi_,
+                gnp.asarray(zi_[:, i]),
+                G,
+                R_list,
+                filtered_covparam_bounds,
+                noisy_initial_guess_fixed_noise_procedure,
+                optim_options=self.crit_optim_options,
+            )
+
+            print("Build model for selected R")
+            self.models[i]["model"], self.zi_relaxed[:, i], _, info_ret = regp.remodel(
+                model["model"],
+                xi_,
+                gnp.asarray(zi_[:, i]),
+                R,
+                filtered_covparam_bounds,
+                noisy_initial_guess_fixed_noise_procedure,
+                True,
+                optim_options=self.crit_optim_options,
+            )
+            print("reGP model built")
+
+            self.models[i]["info"] = info_ret
+            self.models[i]["R"] = R
+            self.models[i]["param0"] = None
+            self.models[i]["param"] = None
+            self.models[i]["time"] = time.time() - tic
+
+        self.smoothed_data = (
+            xi,
+            self.predict(xi, zi, xi, convert_out=False)[0]
+        )
+
+
+def noisy_initial_guess_fixed_noise_procedure(model, xi, zi, scaling=1.0):
+    """Anisotropic initialization strategy with a parameterized constant mean.
+
+    This function provides initial parameter guesses for an
+    anisotropic Gaussian process with a parameterized constant mean.
+
+    Parameters
+    ----------
+    model : object
+        The Gaussian process model object.
+    xi : array_like, shape (n, d)
+        Input data points used for fitting the GP model, where `n` is
+        the number of points and `d` is the dimensionality.
+    zi : array_like, shape (n, )
+        Output (response) values corresponding to the input data points xi.
+    scaling : float
+        Multiple of the isotropic length scale parameters.
+    """
+
+    multiple = 10 ** (-6)
+    n_increase = 20
+
+    xi_ = gnp.asarray(xi)
+    zi_ = gnp.asarray(zi).reshape((-1, 1))  # Ensure zi_ is a column vector
+    n = xi_.shape[0]
+    d = xi_.shape[1]
+
+    delta = gnp.max(xi_, axis=0) - gnp.min(xi_, axis=0)
+    rho = gnp.exp(gnp.gammaln(d / 2 + 1) / d) / (gnp.pi ** 0.5) * delta
+
+    # Maximum isotropic multiple
+    rho = scaling * rho
+
+    log_data_var = gnp.log(zi_.var())
+    log_multiple = log_data_var + gnp.log(multiple)
+
+    nll_list = []
+    mean_GLS_list = []
+    covparam_list = []
+
+    for j in range(n_increase):
+        covparam = gnp.concatenate((gnp.array([log_multiple + j * gnp.log(10)]), -gnp.log(rho)))
+
+        covparam_list.append(covparam)
+
+        _, Kinv1, Kinvz = model.k_inverses(xi_, zi_, covparam, True)
+        mean_GLS = gnp.sum(Kinvz) / gnp.sum(Kinv1)
+
+        mean_GLS_list.append(mean_GLS)
+
+        nll_list.append(
+            model.negative_log_likelihood(mean_GLS, covparam, xi_, zi_.reshape(-1))
+        )
+
+    idx_min = gnp.numpy.argmin(nll_list)
+
+    return mean_GLS_list[idx_min], covparam_list[idx_min]
+
 
 # ==============================================================================
 # Mean Functions Section
