@@ -1588,6 +1588,113 @@ class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp
         )
 
 
+# ==============================================================================
+# Two-stage noisy ModelMaternp hard-thresholded Class
+# ==============================================================================
+
+
+class TwoStageNoisyModel_ConstantMeanMaternp_HardThresholded(TwoStageNoisyModel_ConstantMeanMaternp_reGP):
+    """Two-stage noisy reGP model with a constant mean and a Matern covariance function."""
+
+
+    def select_params(self, xi, zi, force_param_initial_guess=True):
+        """Parameter selection"""
+
+        xi_ = gnp.asarray(xi)
+        zi_ = gnp.asarray(zi)
+        if zi_.ndim == 1:
+            zi_ = zi_.reshape(-1, 1)
+
+        # Safer: one run with small length scales does not alter the subsequent ones.
+        assert force_param_initial_guess
+
+        self.zi_relaxed = gnp.copy(zi_)
+
+        for i in range(self.output_dim):
+            tic = time.time()
+
+            model = self.models[i]
+            mpl = model["mean_paramlength"]
+            assert mpl == 1
+
+            covparam_bounds = self.get_covparam_bounds(gnp.to_np(xi_), gnp.to_np(zi_[:, i]))
+
+            G, R_list = self.get_G_and_R_list(i, xi_, zi_)
+
+            #
+            _largest_R = R_list[0]
+            _ei = regp.get_membership_indices(gnp.to_np(zi_[:, i]), _largest_R)
+            (_x0, _z0, _ind0), _ = regp.split_data(xi_, gnp.to_np(zi_[:, i]), _ei, _largest_R)
+
+            print("Estimate noise with a GP in G = {}".format(G))
+            self.models[i]["model"].covariance = self.covariance_functions[i]
+            self.models[i]["model"], _, _, info_ret_gp = regp.remodel(
+                model["model"],
+                _x0,
+                gnp.asarray(_z0),
+                [[gnp.numpy.inf, gnp.numpy.inf]],
+                covparam_bounds,
+                self.models[i]["parameters_initial_guess_procedure"],
+                regp.make_regp_criterion_with_gradient,
+                True,
+                optim_options=self.crit_optim_options,
+            )
+
+            noise_param = model["model"].covparam[-1]
+            #
+
+            print("Build reGP model for G = {}".format(G))
+
+            filtered_covparam_bounds = covparam_bounds[:(-1)]
+
+            def partial_covariance(x, y, covparam, pairwise=False, use_noise=True):
+                covparam_augmented = gnp.concatenate((
+                    covparam, gnp.array([noise_param])
+                ))
+                return self.covariance_functions[i](x, y, covparam_augmented, pairwise=pairwise, use_noise=use_noise)
+
+            self.models[i]["model"].covariance = partial_covariance
+
+            print("Select R")
+            R = regp.select_optimal_R_hard_thresholded(
+                model["model"],
+                xi_,
+                gnp.asarray(zi_[:, i]),
+                G,
+                R_list,
+                filtered_covparam_bounds,
+                noisy_initial_guess_fixed_noise_procedure,
+                optim_options=self.crit_optim_options,
+            )
+
+            _tmp_zi_i = gnp.copy(gnp.asarray(zi_[:, i]))
+            _tmp_zi_i[_tmp_zi_i >= R[0][0]] = R[0][0]
+
+            print("Build model for selected R")
+            self.models[i]["model"], self.zi_relaxed[:, i], _, info_ret = regp.remodel(
+                model["model"],
+                xi_,
+                _tmp_zi_i,
+                [[gnp.numpy.inf, gnp.numpy.inf]],
+                filtered_covparam_bounds,
+                noisy_initial_guess_fixed_noise_procedure,
+                True,
+                optim_options=self.crit_optim_options,
+            )
+            print("reGP model built")
+
+            self.models[i]["info"] = info_ret
+            self.models[i]["R"] = R
+            self.models[i]["param0"] = None
+            self.models[i]["param"] = None
+            self.models[i]["time"] = time.time() - tic
+
+        self.smoothed_data = (
+            xi,
+            self.predict(xi, zi, xi, convert_out=False)[0]
+        )
+
+
 def noisy_initial_guess_fixed_noise_procedure(model, xi, zi, scaling=1.0):
     """Anisotropic initialization strategy with a parameterized constant mean.
 
