@@ -1351,6 +1351,7 @@ class Model_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternpML):
                 R_list,
                 covparam_bounds,
                 self.models[i]["parameters_initial_guess_procedure"],
+                method=regp.remodel,
                 optim_options=self.crit_optim_options,
             )
 
@@ -1560,6 +1561,7 @@ class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp
                 R_list,
                 filtered_covparam_bounds,
                 noisy_initial_guess_fixed_noise_procedure,
+                method=regp.remodel,
                 optim_options=self.crit_optim_options,
             )
 
@@ -1656,7 +1658,7 @@ class TwoStageNoisyModel_ConstantMeanMaternp_HardThresholded(TwoStageNoisyModel_
             self.models[i]["model"].covariance = partial_covariance
 
             print("Select R")
-            R = regp.select_optimal_R_hard_thresholded(
+            R = regp.select_optimal_R(
                 model["model"],
                 xi_,
                 gnp.asarray(zi_[:, i]),
@@ -1664,21 +1666,20 @@ class TwoStageNoisyModel_ConstantMeanMaternp_HardThresholded(TwoStageNoisyModel_
                 R_list,
                 filtered_covparam_bounds,
                 noisy_initial_guess_fixed_noise_procedure,
+                method=regp.hard_thresholded,
                 optim_options=self.crit_optim_options,
             )
 
-            _tmp_zi_i = gnp.copy(gnp.asarray(zi_[:, i]))
-            _tmp_zi_i[_tmp_zi_i >= R[0][0]] = R[0][0]
-
+            #
             print("Build model for selected R")
-            self.models[i]["model"], self.zi_relaxed[:, i], _, info_ret = regp.remodel(
+            self.models[i]["model"], self.zi_relaxed[:, i], _, info_ret = regp.hard_thresholded(
                 model["model"],
                 xi_,
-                _tmp_zi_i,
-                [[gnp.numpy.inf, gnp.numpy.inf]],
+                gnp.asarray(zi_[:, i]),
+                R,
                 filtered_covparam_bounds,
                 noisy_initial_guess_fixed_noise_procedure,
-                True,
+                info=True,
                 optim_options=self.crit_optim_options,
             )
             print("reGP model built")
