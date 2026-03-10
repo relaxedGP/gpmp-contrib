@@ -1483,9 +1483,24 @@ class NoisyModel_ConstantMeanMaternp_reGP(Model_ConstantMeanMaternp_reGP):
             gnp.to_np(zi_[:, i].min()),
             gnp.to_np(zi_[:, i].max())
         )
+
+        # FIXME: implemented for minimization. To be generalized.
+        _second_element = self.get_kth_sorted_element(zi_[:, i], 1)
+        if G[1] <= _second_element:
+            _third_element = self.get_kth_sorted_element(zi_[:, i], 2)
+            print("Truncate t0 to ensure at least two elements.")
+            G[1] = _third_element
+
+            # FIXME: R_list may not be nonincreasing after this.
+            for j in range(len(R_list)):
+                if R_list[j][0][0] <= _second_element:
+                    R_list[j][0][0] = _third_element
+
         return G, R_list
 
-
+    def get_kth_sorted_element(self, d, k):
+        _d = gnp.to_np(d)
+        return _d[gnp.numpy.argpartition(_d, k)[k]]
 
 # ==============================================================================
 # Two-stage noisy ModelMaternp reGP Class
