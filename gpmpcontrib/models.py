@@ -1553,6 +1553,7 @@ class TwoStageNoisyModel_ConstantMeanMaternp_reGP(NoisyModel_ConstantMeanMaternp
                 return self.covariance_functions[i](x, y, covparam_augmented, pairwise=pairwise, use_noise=use_noise)
 
             self.models[i]["model"].covariance = partial_covariance
+            self.models[i]["model"].covparam = self.models[i]["model"].covparam[:(-1)]
 
             print("Select R")
             R = regp.select_optimal_R(
@@ -1601,6 +1602,17 @@ class TwoStageNoisyModel_ConstantMeanMaternp_HardThresholded(TwoStageNoisyModel_
     """Two-stage hard-thresholded noisy model with a constant mean and a Matern covariance function."""
 
     fitting_method = regp.hard_thresholded
+
+# ==============================================================================
+# Two-stage noisy ModelMaternp fixed-parameters hard-thresholded Class
+# ==============================================================================
+
+
+class TwoStageNoisyModel_ConstantMeanMaternp_HardThresholded_FixedParams(TwoStageNoisyModel_ConstantMeanMaternp_reGP):
+    """Two-stage hard-thresholded noisy model with a constant mean and a Matern covariance function. The parameters
+    are estimated using the data below the validation threshold and held fixed afterwards."""
+
+    fitting_method = regp.hard_thresholded_fixed_params
 
 
 def noisy_initial_guess_fixed_noise_procedure(model, xi, zi, scaling=1.0):

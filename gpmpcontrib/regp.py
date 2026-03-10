@@ -588,4 +588,19 @@ def hard_thresholded(
         optim_options=optim_options
     )
 
+def hard_thresholded_fixed_params(
+        model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, info=False, verbosity=0, optim_options={}
+):
+    assert len(R) == 1, R
+
+    _tmp_zi = gnp.copy(zi)
+    _tmp_zi[_tmp_zi >= R[0][0]] = R[0][0]
+
+    # Return results
+    if info:
+        return model, _tmp_zi, [], None
+    else:
+        return model, _tmp_zi, []
+
+
 # ---------------------------------------
