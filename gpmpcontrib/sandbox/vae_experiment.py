@@ -1,0 +1,270 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+import matplotlib.pyplot as plt
+
+# torch.set_default_dtype(torch.float64)
+
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader, Subset
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+# -----------------------------
+# Dataset
+# -----------------------------
+
+transform = transforms.ToTensor()
+
+train_dataset = datasets.MNIST(
+    "./data", train=True, download=True, transform=transform
+)
+
+val_dataset = datasets.MNIST(
+    "./data", train=False, transform=transform
+)
+
+
+# -----------------------------
+# Dataset corruption
+# -----------------------------
+
+def corrupt_dataset(dataset):
+
+    subset_size = np.random.randint(100, 1000)
+
+    idx = np.random.choice(len(dataset), subset_size, replace=False)
+
+    return Subset(dataset, idx)
+
+
+# -----------------------------
+# VAE model
+# -----------------------------
+
+class VAE(nn.Module):
+
+    def __init__(self, hidden_dim, latent_dim):
+
+        super().__init__()
+
+        self.encoder = nn.Sequential(
+            nn.Linear(784, hidden_dim),
+            nn.ReLU()
+        )
+
+        self.mu = nn.Linear(hidden_dim, latent_dim)
+        self.logvar = nn.Linear(hidden_dim, latent_dim)
+
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 784),
+            nn.Sigmoid()
+        )
+
+    def encode(self, x):
+
+        h = self.encoder(x)
+
+        return self.mu(h), self.logvar(h)
+
+    def reparameterize(self, mu, logvar):
+
+        std = torch.exp(0.5 * logvar)
+
+        eps = torch.randn_like(std)
+
+        return mu + eps * std
+
+    def decode(self, z):
+
+        return self.decoder(z)
+
+    def forward(self, x):
+
+        mu, logvar = self.encode(x)
+
+        z = self.reparameterize(mu, logvar)
+
+        recon = self.decode(z)
+
+        return recon, mu, logvar
+
+
+# -----------------------------
+# Loss function
+# -----------------------------
+
+def vae_loss(recon, x, mu, logvar, beta):
+    # Average or sum?
+
+    # Clip or not?
+    # eps = 1e-12
+    # recon = torch.clamp(recon, eps, 1 - eps)
+
+    recon_loss = nn.functional.binary_cross_entropy(
+        recon, x, reduction="sum"
+    )
+
+    kl = -0.5 * torch.sum(
+        1 + logvar - mu.pow(2) - logvar.exp()
+    )
+
+    return recon_loss + beta * kl
+
+
+# -----------------------------
+# Training
+# -----------------------------
+
+def train_vae(
+    hidden_dim=256,
+    latent_dim=20,
+    lr=1e-3,
+    beta=1.0,
+    epochs=5,
+    batch_size=128,
+    p_outlier=0.1
+):
+
+    dataset = train_dataset
+
+    if np.random.rand() < p_outlier:
+        dataset = corrupt_dataset(dataset)
+        print("Corrupted dataset used:", len(dataset))
+
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+    model = VAE(hidden_dim, latent_dim).to(device)
+
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+
+    for epoch in range(epochs):
+
+        model.train()
+
+        total_loss = 0
+
+        for x,_ in loader:
+
+            x = x.view(-1,784).to(device)
+
+            recon, mu, logvar = model(x)
+
+            loss = vae_loss(recon, x, mu, logvar, beta)
+
+            optimizer.zero_grad()
+
+            loss.backward()
+
+            optimizer.step()
+
+            total_loss += loss.item()
+
+        print(
+            f"Epoch {epoch+1}, loss:",
+            total_loss / len(loader.dataset)
+        )
+
+    return model
+
+
+# -----------------------------
+# Evaluation
+# -----------------------------
+
+def evaluate(model):
+
+    loader = DataLoader(val_dataset, batch_size=256)
+
+    model.eval()
+
+    total = 0
+
+    with torch.no_grad():
+
+        for x,_ in loader:
+
+            x = x.view(-1,784).to(device)
+
+            recon, mu, logvar = model(x)
+
+            loss = vae_loss(recon, x, mu, logvar, beta=1.0)
+
+            total += loss.item()
+
+    return total / len(loader.dataset)
+
+def plot_reconstructions(model, dataset, device, n=8):
+
+    loader = DataLoader(dataset, batch_size=n, shuffle=True)
+    x, _ = next(iter(loader))
+
+    x = x.view(-1, 784).to(device)
+
+    model.eval()
+    with torch.no_grad():
+        recon, _, _ = model(x)
+
+    x = x.view(-1, 28, 28).cpu()
+    recon = recon.view(-1, 28, 28).cpu()
+
+    fig, axes = plt.subplots(2, n, figsize=(n*2, 4))
+
+    for i in range(n):
+        axes[0, i].imshow(x[i], cmap="gray")
+        axes[0, i].axis("off")
+
+        axes[1, i].imshow(recon[i], cmap="gray")
+        axes[1, i].axis("off")
+
+    axes[0, 0].set_ylabel("Original")
+    axes[1, 0].set_ylabel("Reconstruction")
+
+    plt.tight_layout()
+    plt.show()
+
+def plot_generated(model, device, n=8):
+
+    latent_dim = model.mu.out_features
+
+    z = torch.randn(n, latent_dim).to(device)
+
+    model.eval()
+    with torch.no_grad():
+        samples = model.decode(z)
+
+    samples = samples.view(-1, 28, 28).cpu()
+
+    fig, axes = plt.subplots(1, n, figsize=(n*2, 2))
+
+    for i in range(n):
+        axes[i].imshow(samples[i], cmap="gray")
+        axes[i].axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
+
+# -----------------------------
+# Run experiment
+# -----------------------------
+
+model = train_vae(
+    hidden_dim=512,
+    latent_dim=20,
+    lr=0.05,
+    beta=5.0,
+    epochs=5,
+    p_outlier=0.0
+)
+
+val_loss = evaluate(model)
+
+print("Validation ELBO:", val_loss)
+
+plot_reconstructions(model, val_dataset, device, n=8)
+plot_generated(model, device, n=8)
