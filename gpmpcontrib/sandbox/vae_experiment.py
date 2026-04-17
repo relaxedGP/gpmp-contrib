@@ -46,24 +46,31 @@ def corrupt_dataset(dataset):
 
 class VAE(nn.Module):
 
-    def __init__(self, hidden_dim, latent_dim):
+    def __init__(self, in_features, hidden_dim_list, latent_dim):
 
         super().__init__()
 
-        self.encoder = nn.Sequential(
-            nn.Linear(784, hidden_dim),
-            nn.ReLU()
-        )
+        encoder_dim_list = [in_features] + hidden_dim_list
 
-        self.mu = nn.Linear(hidden_dim, latent_dim)
-        self.logvar = nn.Linear(hidden_dim, latent_dim)
+        encoder_layers = self.get_layers_from_dim_list(encoder_dim_list)
 
-        self.decoder = nn.Sequential(
-            nn.Linear(latent_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 784),
-            nn.Sigmoid()
-        )
+        self.encoder = nn.Sequential(*encoder_layers)
+
+        self.mu = nn.Linear(hidden_dim_list[-1], latent_dim)
+        self.logvar = nn.Linear(hidden_dim_list[-1], latent_dim)
+
+        decoder_dim_list = [latent_dim] + hidden_dim_list[::-1]
+        decoder_layers = self.get_layers_from_dim_list(decoder_dim_list)
+
+        self.decoder = nn.Sequential(*(decoder_layers + [nn.Linear(hidden_dim_list[0], in_features), nn.Sigmoid()]))
+
+    def get_layers_from_dim_list(self, dim_list):
+        layers = []
+        for i in range(len(dim_list) - 1):
+            layers.append(nn.Linear(dim_list[i], dim_list[i + 1]))
+            layers.append(nn.ReLU())
+
+        return layers
 
     def encode(self, x):
 
@@ -121,7 +128,7 @@ def vae_loss(recon, x, mu, logvar, beta):
 # -----------------------------
 
 def train_vae(
-    hidden_dim=256,
+    hidden_dim_list=[256],
     latent_dim=20,
     lr=1e-3,
     beta=1.0,
@@ -138,7 +145,7 @@ def train_vae(
 
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    model = VAE(hidden_dim, latent_dim).to(device)
+    model = VAE(784, hidden_dim_list, latent_dim).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
@@ -254,7 +261,7 @@ def plot_generated(model, device, n=8):
 # -----------------------------
 
 model = train_vae(
-    hidden_dim=512,
+    hidden_dim_list=[512],
     latent_dim=20,
     lr=0.05,
     beta=5.0,
