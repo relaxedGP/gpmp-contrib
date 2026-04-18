@@ -62,7 +62,8 @@ class VAE(nn.Module):
         decoder_dim_list = [latent_dim] + hidden_dim_list[::-1]
         decoder_layers = self.get_layers_from_dim_list(decoder_dim_list)
 
-        self.decoder = nn.Sequential(*(decoder_layers + [nn.Linear(hidden_dim_list[0], in_features), nn.Sigmoid()]))
+        self.decoder_logits = nn.Sequential(*(decoder_layers + [nn.Linear(hidden_dim_list[0], in_features)]))
+        self.sigmoid = nn.Sigmoid()
 
     def get_layers_from_dim_list(self, dim_list):
         layers = []
@@ -87,8 +88,9 @@ class VAE(nn.Module):
         return mu + eps * std
 
     def decode(self, z):
-
-        return self.decoder(z)
+        recon_logits = self.decoder_logits(z)
+        recon = self.sigmoid(recon_logits)
+        return recon, recon_logits
 
     def forward(self, x):
 
@@ -96,24 +98,24 @@ class VAE(nn.Module):
 
         z = self.reparameterize(mu, logvar)
 
-        recon = self.decode(z)
+        recon, recon_logits = self.decode(z)
 
-        return recon, mu, logvar
+        return recon, recon_logits, mu, logvar
 
 
 # -----------------------------
 # Loss function
 # -----------------------------
 
-def vae_loss(recon, x, mu, logvar, beta):
+def vae_loss(recon_logits, x, mu, logvar, beta):
     # Average or sum?
 
     # Clip or not?
     # eps = 1e-12
     # recon = torch.clamp(recon, eps, 1 - eps)
 
-    recon_loss = nn.functional.binary_cross_entropy(
-        recon, x, reduction="sum"
+    recon_loss = nn.functional.binary_cross_entropy_with_logits(
+        recon_logits, x, reduction="sum"
     )
 
     kl = -0.5 * torch.sum(
@@ -159,9 +161,9 @@ def train_vae(
 
             x = x.view(-1,784).to(device)
 
-            recon, mu, logvar = model(x)
+            _, recon_logits, mu, logvar = model(x)
 
-            loss = vae_loss(recon, x, mu, logvar, beta)
+            loss = vae_loss(recon_logits, x, mu, logvar, beta)
 
             optimizer.zero_grad()
 
@@ -197,9 +199,9 @@ def evaluate(model):
 
             x = x.view(-1,784).to(device)
 
-            recon, mu, logvar = model(x)
+            _, recon_logits, mu, logvar = model(x)
 
-            loss = vae_loss(recon, x, mu, logvar, beta=1.0)
+            loss = vae_loss(recon_logits, x, mu, logvar, beta=1.0)
 
             total += loss.item()
 
@@ -214,7 +216,7 @@ def plot_reconstructions(model, dataset, device, n=8):
 
     model.eval()
     with torch.no_grad():
-        recon, _, _ = model(x)
+        recon, _, _, _ = model(x)
 
     x = x.view(-1, 28, 28).cpu()
     recon = recon.view(-1, 28, 28).cpu()
@@ -242,7 +244,7 @@ def plot_generated(model, device, n=8):
 
     model.eval()
     with torch.no_grad():
-        samples = model.decode(z)
+        samples, _ = model.decode(z)
 
     samples = samples.view(-1, 28, 28).cpu()
 
