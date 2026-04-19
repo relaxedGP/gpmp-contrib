@@ -266,22 +266,24 @@ def plot_generated(model, device, n=8):
     plt.show()
 
 
-# -----------------------------
-# Run experiment
-# -----------------------------
+if __name__ == "__main__":
 
-model = train_vae(
-    hidden_dim_list=[512],
-    latent_dim=20,
-    lr=0.05,
-    beta=5.0,
-    epochs=5,
-    p_outlier=0.0
-)
+    # -----------------------------
+    # Run experiment
+    # -----------------------------
 
-val_loss = evaluate(model)
+    model = train_vae(
+        hidden_dim_list=[512],
+        latent_dim=20,
+        lr=0.05,
+        beta=5.0,
+        epochs=5,
+        p_outlier=0.0
+    )
 
-print("Validation ELBO:", val_loss)
+    val_loss = evaluate(model)
 
-plot_reconstructions(model, val_dataset, device, n=8)
-plot_generated(model, device, n=8)
+    print("Validation ELBO:", val_loss)
+
+    plot_reconstructions(model, val_dataset, device, n=8)
+    plot_generated(model, device, n=8)
