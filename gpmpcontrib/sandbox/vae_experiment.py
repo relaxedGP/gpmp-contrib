@@ -11,6 +11,8 @@ from torch.utils.data import DataLoader, Subset
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+logvar_clip = torch.tensor(85)
+
 
 # -----------------------------
 # Dataset
@@ -46,9 +48,11 @@ def corrupt_dataset(dataset):
 
 class VAE(nn.Module):
 
-    def __init__(self, in_features, hidden_dim_list, latent_dim):
+    def __init__(self, in_features, hidden_dim_list, latent_dim, logvar_clip):
 
         super().__init__()
+
+        self.logvar_clip = logvar_clip
 
         encoder_dim_list = [in_features] + hidden_dim_list
 
@@ -80,6 +84,7 @@ class VAE(nn.Module):
         return self.mu(h), self.logvar(h)
 
     def reparameterize(self, mu, logvar):
+        logvar = torch.clamp_max(logvar, logvar_clip)
 
         std = torch.exp(0.5 * logvar)
 
@@ -107,7 +112,7 @@ class VAE(nn.Module):
 # Loss function
 # -----------------------------
 
-def vae_loss(recon_logits, x, mu, logvar, beta):
+def vae_loss(recon_logits, x, mu, logvar, beta, logvar_clip):
     # Average or sum?
 
     # Clip or not?
@@ -117,6 +122,9 @@ def vae_loss(recon_logits, x, mu, logvar, beta):
     recon_loss = nn.functional.binary_cross_entropy_with_logits(
         recon_logits, x, reduction="sum"
     )
+
+    # Clip logvar
+    logvar = torch.clamp_max(logvar, logvar_clip)
 
     kl = -0.5 * torch.sum(
         1 + logvar - mu.pow(2) - logvar.exp()
@@ -147,7 +155,7 @@ def train_vae(
 
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    model = VAE(784, hidden_dim_list, latent_dim).to(device)
+    model = VAE(784, hidden_dim_list, latent_dim, logvar_clip).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
@@ -163,7 +171,7 @@ def train_vae(
 
             _, recon_logits, mu, logvar = model(x)
 
-            loss = vae_loss(recon_logits, x, mu, logvar, beta)
+            loss = vae_loss(recon_logits, x, mu, logvar, beta, logvar_clip)
 
             optimizer.zero_grad()
 
@@ -201,7 +209,7 @@ def evaluate(model):
 
             _, recon_logits, mu, logvar = model(x)
 
-            loss = vae_loss(recon_logits, x, mu, logvar, beta=1.0)
+            loss = vae_loss(recon_logits, x, mu, logvar, beta=1.0, logvar_clip=logvar_clip)
 
             total += loss.item()
 
