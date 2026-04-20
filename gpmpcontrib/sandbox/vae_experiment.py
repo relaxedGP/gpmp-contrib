@@ -295,6 +295,8 @@ def run_vae(latent_dim, lr, beta, first_hidden_dim, L, epochs, p_outlier):
     else:
         _L = 3
 
+    assert latent_dim <= first_hidden_dim <= 784, (latent_dim, first_hidden_dim)
+
     _latent_dim = int(latent_dim)
     _first_hidden_dim = int(first_hidden_dim)
     _hidden_dim_list = np.logspace(np.log10(latent_dim), np.log10(first_hidden_dim), _L + 1)[1:]
