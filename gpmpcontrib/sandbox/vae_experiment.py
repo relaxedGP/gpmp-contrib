@@ -265,6 +265,50 @@ def plot_generated(model, device, n=8):
     plt.tight_layout()
     plt.show()
 
+def _run_vae(
+        hidden_dim_list,
+        latent_dim,
+        lr,
+        beta,
+        epochs,
+        p_outlier
+):
+    model = train_vae(
+        hidden_dim_list=hidden_dim_list,
+        latent_dim=latent_dim,
+        lr=lr,
+        beta=beta,
+        epochs=epochs,
+        p_outlier=p_outlier
+    )
+
+    validation_loss = evaluate(model)
+
+    return validation_loss
+
+def run_vae(latent_dim, lr, beta, first_hidden_dim, L, epochs, p_outlier):
+    assert 0.5 <= L <= 3.5, L
+    if L <= 1.5:
+        _L = 1
+    elif L <= 2.5:
+        _L = 2
+    else:
+        _L = 3
+
+    _latent_dim = int(latent_dim)
+    _first_hidden_dim = int(first_hidden_dim)
+    _hidden_dim_list = np.logspace(np.log10(latent_dim), np.log10(first_hidden_dim), _L + 1)[1:]
+    hidden_dim_list = [int(_tmp) for _tmp in _hidden_dim_list][::-1]
+
+    return _run_vae(
+        hidden_dim_list,
+        _latent_dim,
+        lr,
+        beta,
+        epochs,
+        p_outlier
+    )
+
 
 if __name__ == "__main__":
 
