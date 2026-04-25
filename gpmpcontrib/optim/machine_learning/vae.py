@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import matplotlib.pyplot as plt
+from gpmpcontrib.optim.machine_learning.custom_linear import CustomLinear
 
 # torch.set_default_dtype(torch.float64)
 
@@ -49,6 +50,7 @@ def corrupt_dataset(dataset):
 class VAE(nn.Module):
 
     def __init__(self, in_features, hidden_dim_list, latent_dim, logvar_clip, torch_gen):
+        self.torch_gen = torch_gen
 
         super().__init__()
 
@@ -60,21 +62,21 @@ class VAE(nn.Module):
 
         self.encoder = nn.Sequential(*encoder_layers)
 
-        self.mu = nn.Linear(hidden_dim_list[-1], latent_dim)
-        self.logvar = nn.Linear(hidden_dim_list[-1], latent_dim)
+        self.mu = CustomLinear(hidden_dim_list[-1], latent_dim, generator=self.torch_gen)
+        self.logvar = CustomLinear(hidden_dim_list[-1], latent_dim, generator=self.torch_gen)
 
         decoder_dim_list = [latent_dim] + hidden_dim_list[::-1]
         decoder_layers = self.get_layers_from_dim_list(decoder_dim_list)
 
-        self.decoder_logits = nn.Sequential(*(decoder_layers + [nn.Linear(hidden_dim_list[0], in_features)]))
+        self.decoder_logits = nn.Sequential(
+            *(decoder_layers + [CustomLinear(hidden_dim_list[0], in_features, generator=self.torch_gen)])
+        )
         self.sigmoid = nn.Sigmoid()
-
-        self.torch_gen = torch_gen
 
     def get_layers_from_dim_list(self, dim_list):
         layers = []
         for i in range(len(dim_list) - 1):
-            layers.append(nn.Linear(dim_list[i], dim_list[i + 1]))
+            layers.append(CustomLinear(dim_list[i], dim_list[i + 1], generator=self.torch_gen))
             layers.append(nn.ReLU())
 
         return layers
