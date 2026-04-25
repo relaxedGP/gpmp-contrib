@@ -48,7 +48,7 @@ def corrupt_dataset(dataset):
 
 class VAE(nn.Module):
 
-    def __init__(self, in_features, hidden_dim_list, latent_dim, logvar_clip):
+    def __init__(self, in_features, hidden_dim_list, latent_dim, logvar_clip, torch_gen):
 
         super().__init__()
 
@@ -69,6 +69,8 @@ class VAE(nn.Module):
         self.decoder_logits = nn.Sequential(*(decoder_layers + [nn.Linear(hidden_dim_list[0], in_features)]))
         self.sigmoid = nn.Sigmoid()
 
+        self.torch_gen = torch_gen
+
     def get_layers_from_dim_list(self, dim_list):
         layers = []
         for i in range(len(dim_list) - 1):
@@ -88,7 +90,7 @@ class VAE(nn.Module):
 
         std = torch.exp(0.5 * logvar)
 
-        eps = torch.randn_like(std)
+        eps = torch.randn_like(std, device=device, generator=self.torch_gen)
 
         return mu + eps * std
 
@@ -138,13 +140,14 @@ def vae_loss(recon_logits, x, mu, logvar, beta, logvar_clip):
 # -----------------------------
 
 def train_vae(
-    hidden_dim_list=[256],
-    latent_dim=20,
-    lr=1e-3,
-    beta=1.0,
-    epochs=5,
-    batch_size=128,
-    p_outlier=0.1
+    hidden_dim_list,
+    latent_dim,
+    lr,
+    beta,
+    epochs,
+    batch_size,
+    p_outlier,
+    torch_gen
 ):
 
     dataset = train_dataset
@@ -153,9 +156,9 @@ def train_vae(
         dataset = corrupt_dataset(dataset)
         print("Corrupted dataset used:", len(dataset))
 
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, generator=torch_gen)
 
-    model = VAE(784, hidden_dim_list, latent_dim, logvar_clip).to(device)
+    model = VAE(784, hidden_dim_list, latent_dim, logvar_clip, torch_gen=torch_gen).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
@@ -271,7 +274,9 @@ def _run_vae(
         lr,
         beta,
         epochs,
-        p_outlier
+        batch_size,
+        p_outlier,
+        torch_gen
 ):
     model = train_vae(
         hidden_dim_list=hidden_dim_list,
@@ -279,14 +284,16 @@ def _run_vae(
         lr=lr,
         beta=beta,
         epochs=epochs,
-        p_outlier=p_outlier
+        batch_size=batch_size,
+        p_outlier=p_outlier,
+        torch_gen=torch_gen
     )
 
     validation_loss = evaluate(model)
 
     return validation_loss
 
-def run_vae(latent_dim, lr, beta, first_hidden_dim, L, epochs, p_outlier):
+def run_vae(latent_dim, lr, beta, first_hidden_dim, L, epochs, batch_size, p_outlier, torch_gen):
     assert 0.5 <= L <= 3.5, L
     if L <= 1.5:
         _L = 1
@@ -297,6 +304,7 @@ def run_vae(latent_dim, lr, beta, first_hidden_dim, L, epochs, p_outlier):
 
     assert latent_dim <= first_hidden_dim <= 784, (latent_dim, first_hidden_dim)
 
+    _batch_size = int(batch_size)
     _latent_dim = int(latent_dim)
     _first_hidden_dim = int(first_hidden_dim)
     _hidden_dim_list = np.logspace(np.log10(latent_dim), np.log10(first_hidden_dim), _L + 1)[1:]
@@ -308,7 +316,9 @@ def run_vae(latent_dim, lr, beta, first_hidden_dim, L, epochs, p_outlier):
         lr,
         beta,
         epochs,
-        p_outlier
+        _batch_size,
+        p_outlier,
+        torch_gen
     )
 
 
@@ -318,13 +328,17 @@ if __name__ == "__main__":
     # Run experiment
     # -----------------------------
 
+    torch_gen = torch.Generator(device=device)
+
     model = train_vae(
         hidden_dim_list=[512],
         latent_dim=20,
         lr=0.05,
         beta=5.0,
         epochs=5,
-        p_outlier=0.0
+        batch_size=128,
+        p_outlier=0.0,
+        torch_gen=torch_gen
     )
 
     val_loss = evaluate(model)
