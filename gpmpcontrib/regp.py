@@ -517,7 +517,7 @@ def predict(model, xi, zi, xt, R, covparam0=None, info=False, verbosity=0):
 
     return zi_relaxed, (zpm, zpv), model, info_ret
 
-def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, initial_params_guess_procedure, optim_options):
+def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, initial_params_guess_procedure, method, optim_options):
     """
     Choose threshold for reGP with relaxation above t0
 
@@ -541,6 +541,8 @@ def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, initial_params_g
         Bounds for covariance parameters.
     initial_params_guess_procedure : callable
         Methods for an initial guess of the parameters of the mean function and the kernel
+    method : callable
+        Learning method
     optim_options : dict
         Options passed to remodel
 
@@ -553,7 +555,7 @@ def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, initial_params_g
 
     J = gnp.numpy.zeros(q)
     for i in range(q):
-        model, zi_relaxed, _ = remodel(model, xi, zi, R_list[i], covparam_bounds, initial_params_guess_procedure,
+        model, zi_relaxed, _ = method(model, xi, zi, R_list[i], covparam_bounds, initial_params_guess_procedure,
                                        optim_options=optim_options)
         zloom, zloov, _ = model.loo(xi, zi_relaxed)
         tCRPS = gp.misc.scoringrules.tcrps_gaussian(zloom, gnp.sqrt(zloov), zi_relaxed, a=G[0], b=G[1])
@@ -563,6 +565,42 @@ def select_optimal_R(model, xi, zi, G, R_list, covparam_bounds, initial_params_g
     Ropt = R_list[iopt]
 
     return Ropt
+
+
+#
+def hard_thresholded(
+        model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, info=False, verbosity=0, optim_options={}
+):
+    assert len(R) == 1, R
+
+    _tmp_zi = gnp.copy(zi)
+    _tmp_zi[_tmp_zi >= R[0][0]] = R[0][0]
+
+    return remodel(
+        model,
+        xi,
+        _tmp_zi,
+        [[gnp.numpy.inf, gnp.numpy.inf]],
+        covparam_bounds,
+        initial_params_guess_procedure,
+        info=info,
+        verbosity=verbosity,
+        optim_options=optim_options
+    )
+
+def hard_thresholded_fixed_params(
+        model, xi, zi, R, covparam_bounds, initial_params_guess_procedure, info=False, verbosity=0, optim_options={}
+):
+    assert len(R) == 1, R
+
+    _tmp_zi = gnp.copy(zi)
+    _tmp_zi[_tmp_zi >= R[0][0]] = R[0][0]
+
+    # Return results
+    if info:
+        return model, _tmp_zi, [], None
+    else:
+        return model, _tmp_zi, []
 
 
 # ---------------------------------------

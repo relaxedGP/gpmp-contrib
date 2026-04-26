@@ -5,6 +5,8 @@ from .models import Model_ConstantMeanMaternp_reGP
 from .models import NoisyModel_ConstantMeanMaternpML
 from .models import NoisyModel_ConstantMeanMaternp_reGP
 from .models import TwoStageNoisyModel_ConstantMeanMaternp_reGP
+from .models import TwoStageNoisyModel_ConstantMeanMaternp_HardThresholded
+from .models import TwoStageNoisyModel_ConstantMeanMaternp_HardThresholded_FixedParams
 from .smc import SMC
 from .sequentialprediction import SequentialPrediction
 from .pointwisecriterion import PointwiseCriterion
