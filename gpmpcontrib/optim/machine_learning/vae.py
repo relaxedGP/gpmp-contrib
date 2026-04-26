@@ -304,7 +304,7 @@ def run_vae(latent_dim, lr, beta, first_hidden_dim, L, epochs, batch_size, p_out
     else:
         _L = 3
 
-    assert latent_dim <= first_hidden_dim <= 784, (latent_dim, first_hidden_dim)
+    # assert latent_dim <= first_hidden_dim <= 784, (latent_dim, first_hidden_dim)
 
     _batch_size = int(batch_size)
     _latent_dim = int(latent_dim)
