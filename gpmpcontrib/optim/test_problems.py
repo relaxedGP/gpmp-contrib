@@ -1,6 +1,7 @@
 import numpy as np
 from gpmpcontrib.computerexperiment import ComputerExperiment
 import sys
+import gpmpcontrib.optim.machine_learning.vae
 
 
 _TEST = False
@@ -8,6 +9,55 @@ _TEST = False
 #
 
 def __getattr__(name, rng):
+
+    if name == "vae":
+        import torch
+
+        def _vae_objective(x, rng):
+
+            assert x.ndim == 2, x.shape
+
+            torch_seed = int(rng.integers(0, 2 ** 63 - 1))
+            torch_gen = torch.Generator()
+            torch_gen.manual_seed(torch_seed)
+
+            res = np.zeros([x.shape[0]])
+
+            p_outlier = 0.0
+            epochs = 10
+
+            for i in range(x.shape[0]):
+                latent_dim = np.exp(x[i, 0])
+                lr = np.exp(x[i, 1])
+                beta = np.exp(x[i, 2])
+                first_hidden_dim = np.exp(x[i, 3])
+                L = x[i, 4]
+                batch_size = np.exp(x[i, 5])
+
+                res[i] = gpmpcontrib.optim.machine_learning.vae.run_vae(
+                    latent_dim, lr, beta, first_hidden_dim, L, epochs, batch_size, p_outlier, torch_gen
+                )
+
+            return res
+
+        _vae_dict = {
+            "input_dim": 6,
+            "input_box": [
+                [np.log(16), np.log(5 * 10 ** (-5)), np.log(0.1), np.log(32), 0.5, np.log(16)],
+                [np.log(128), np.log(5 * 10 ** (-2)), np.log(5), np.log(512), 3.5, np.log(512)]
+            ],
+        }
+
+        vae = ComputerExperiment(
+            _vae_dict["input_dim"],
+            _vae_dict["input_box"],
+            single_objective=lambda x: _vae_objective(x, rng)
+        )
+
+        vae.noiseless_problem = None
+
+        return vae
+
     split_name = name.split("-")
     if not split_name[0] == "noisy":
         return getattr(sys.modules[__name__], name)
