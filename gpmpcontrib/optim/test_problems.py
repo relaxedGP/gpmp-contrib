@@ -42,7 +42,10 @@ def __getattr__(name, rng):
 
         _vae_dict = {
             "input_dim": 6,
-            "input_box": [[1, -3, -1, 4, 0.5, 3], [3, -1, 1, 6, 3.5, 6]],
+            "input_box": [
+                [np.log(16), np.log(5 * 10 ** (-5)), np.log(0.1), np.log(32), 0.5, np.log(16)],
+                [np.log(128), np.log(5 * 10 ** (-2)), np.log(5), np.log(512), 3.5, np.log(512)]
+            ],
         }
 
         vae = ComputerExperiment(
