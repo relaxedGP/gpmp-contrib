@@ -309,7 +309,7 @@ def run_vae(latent_dim, lr, beta, first_hidden_dim, L, epochs, batch_size, p_out
     _batch_size = int(batch_size)
     _latent_dim = int(latent_dim)
     _first_hidden_dim = int(first_hidden_dim)
-    _hidden_dim_list = np.logspace(np.log10(latent_dim), np.log10(first_hidden_dim), _L + 1)[1:]
+    _hidden_dim_list = np.logspace(np.log10(_latent_dim), np.log10(_first_hidden_dim), _L + 1)[1:]
     hidden_dim_list = [int(_tmp) for _tmp in _hidden_dim_list][::-1]
 
     return _run_vae(
