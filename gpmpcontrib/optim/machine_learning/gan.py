@@ -4,7 +4,10 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
+import matplotlib
+matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
+
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
