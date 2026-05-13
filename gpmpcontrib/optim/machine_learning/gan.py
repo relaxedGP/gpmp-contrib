@@ -168,7 +168,7 @@ if __name__ == "__main__":
     latent_dim = int(np.exp(x_test[0,0]))
     torch_gen = torch.Generator()
     torch_gen.manual_seed(42)
-    G = Generator(latent_dim, dropout=0.2).to(device)
+    G = Generator(latent_dim).to(device)
     z = torch.randn(8, latent_dim, 1, 1, device=device, generator=torch_gen)
     with torch.no_grad():
         fake_imgs = G(z).cpu()
