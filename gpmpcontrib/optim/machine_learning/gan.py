@@ -184,4 +184,5 @@ if __name__ == "__main__":
     for i in range(8):
         axes[i].imshow(np.transpose(imgs[i].numpy(), (1,2,0)))
         axes[i].axis("off")
-    plt.show()
+
+    plt.savefig("gan.pdf")
