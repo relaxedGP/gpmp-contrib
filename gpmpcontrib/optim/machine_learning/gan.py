@@ -59,7 +59,7 @@ class Discriminator(nn.Module):
 # -----------------------------
 # GAN objective compatible GP
 # -----------------------------
-def _gan_objective(x, rng, epochs=3):
+def _gan_objective(x, rng, epochs=3, return_model=False):
     """
     x: (n_points, 7) -> latent_dim, lr_gen, lr_disc, beta1, dropout_gen, dropout_disc, batch_size
     """
@@ -128,7 +128,10 @@ def _gan_objective(x, rng, epochs=3):
             fake_mean = D(fake_imgs).mean().item()
         res[i] = abs(real_mean - fake_mean)
 
-    return res
+    if return_model:
+        return res, G, D
+    else:
+        return res
 
 # -----------------------------
 # Domaine compatible GP
@@ -164,14 +167,13 @@ if __name__ == "__main__":
     # Test point dans le domaine
     x_test = np.array([[np.log(64), np.log(1e-3), np.log(1e-3), np.log(0.5), 0.2, 0.2, np.log(64)]])
 
-    res = _gan_objective(x_test, rng, epochs=3)
+    res, G, _ = _gan_objective(x_test, rng, epochs=3, return_model=True)
     print("Proxy metric:", res)
 
     # Quick generation visualization
     latent_dim = int(np.exp(x_test[0,0]))
     torch_gen = torch.Generator()
     torch_gen.manual_seed(42)
-    G = Generator(latent_dim).to(device)
     z = torch.randn(8, latent_dim, 1, 1, device=device, generator=torch_gen)
     with torch.no_grad():
         fake_imgs = G(z).cpu()
