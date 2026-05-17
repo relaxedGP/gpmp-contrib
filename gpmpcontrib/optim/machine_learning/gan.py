@@ -182,9 +182,9 @@ if __name__ == "__main__":
     imgs = (fake_imgs + 1) / 2
 
     import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(1, 8, figsize=(16,2))
+    fig, axes = plt.subplots(1, 8, figsize=(24, 3))
     for i in range(8):
-        axes[i].imshow(np.transpose(imgs[i].numpy(), (1,2,0)))
+        axes[i].imshow(np.transpose(imgs[i].numpy(), (1, 2, 0)), interpolation="lanczos")
         axes[i].axis("off")
 
     plt.savefig("gan.pdf")
