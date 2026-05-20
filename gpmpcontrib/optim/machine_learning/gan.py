@@ -19,42 +19,55 @@ class Generator(nn.Module):
     def __init__(self, latent_dim, channels=3):
         super().__init__()
         self.net = nn.Sequential(
-            nn.ConvTranspose2d(latent_dim, 256, 4, 1, 0),
+            nn.ConvTranspose2d(latent_dim, 256, 4, 1, 0, bias=False),
             nn.BatchNorm2d(256),
             nn.ReLU(True),
-            nn.ConvTranspose2d(256, 128, 4, 2, 1),
+            nn.ConvTranspose2d(256, 128, 4, 2, 1, bias=False),
             nn.BatchNorm2d(128),
             nn.ReLU(True),
-            nn.ConvTranspose2d(128, 64, 4, 2, 1),
+            nn.ConvTranspose2d(128, 64, 4, 2, 1, bias=False),
             nn.BatchNorm2d(64),
             nn.ReLU(True),
-            nn.ConvTranspose2d(64, channels, 4, 2, 1),
+            nn.ConvTranspose2d(64, channels, 4, 2, 1, bias=False),
             nn.Tanh()
         )
 
     def forward(self, z):
         return self.net(z)
 
+
 class Discriminator(nn.Module):
     def __init__(self, channels=3, dropout=0.3):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv2d(channels, 64, 4, 2, 1),
+            nn.Conv2d(channels, 64, 4, 2, 1, bias=False),
             nn.LeakyReLU(0.2),
             nn.Dropout(dropout),
-            nn.Conv2d(64, 128, 4, 2, 1),
+            nn.Conv2d(64, 128, 4, 2, 1, bias=False),
             nn.BatchNorm2d(128),
             nn.LeakyReLU(0.2),
             nn.Dropout(dropout),
-            nn.Conv2d(128, 256, 4, 2, 1),
+            nn.Conv2d(128, 256, 4, 2, 1, bias=False),
             nn.BatchNorm2d(256),
             nn.LeakyReLU(0.2),
-            nn.Conv2d(256, 1, 4, 1, 0),
+            nn.Conv2d(256, 1, 4, 1, 0, bias=False),
             nn.Sigmoid()
         )
 
     def forward(self, x):
         return self.net(x).view(-1, 1)
+
+
+# custom weights initialization from https://arxiv.org/pdf/1511.06434
+# and https://github.com/pytorch/tutorials/blob/main/beginner_source/dcgan_faces_tutorial.py
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
+
 
 # -----------------------------
 # GAN objective compatible GP
@@ -89,6 +102,9 @@ def _gan_objective(x, rng, epochs=3, return_model=False):
 
         G = Generator(latent_dim).to(device)
         D = Discriminator(dropout=dropout_disc).to(device)
+
+        G.apply(weights_init)
+        D.apply(weights_init)
 
         criterion = nn.BCELoss()
         optimizerG = optim.Adam(G.parameters(), lr=lr_gen, betas=(beta1, 0.999))
