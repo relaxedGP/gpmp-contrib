@@ -51,7 +51,6 @@ class Discriminator(nn.Module):
             nn.BatchNorm2d(256),
             nn.LeakyReLU(0.2),
             nn.Conv2d(256, 1, 4, 1, 0, bias=False),
-            nn.Sigmoid()
         )
 
     def forward(self, x):
@@ -106,7 +105,7 @@ def _gan_objective(x, rng, epochs=3, return_model=False):
         G.apply(weights_init)
         D.apply(weights_init)
 
-        criterion = nn.BCELoss()
+        criterion = nn.BCEWithLogitsLoss()
         optimizerG = optim.Adam(G.parameters(), lr=lr_gen, betas=(beta1, 0.999))
         optimizerD = optim.Adam(D.parameters(), lr=lr_disc, betas=(beta1, 0.999))
 
@@ -140,8 +139,8 @@ def _gan_objective(x, rng, epochs=3, return_model=False):
             imgs = imgs.to(device)
             z = torch.randn(batch_size, latent_dim, 1, 1, device=device, generator=torch_gen)
             fake_imgs = G(z)
-            real_mean = D(imgs).mean().item()
-            fake_mean = D(fake_imgs).mean().item()
+            real_mean = torch.sigmoid(D(imgs)).mean().item()
+            fake_mean = torch.sigmoid(D(fake_imgs)).mean().item()
         res[i] = abs(real_mean - fake_mean)
 
     if return_model:
